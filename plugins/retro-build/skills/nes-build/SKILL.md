@@ -1,6 +1,6 @@
 ---
 name: nes-build
-description: Build NES ROMs from 6502 assembly using ca65 + ld65 on macOS, and optionally launch the result in Mesen. Trigger on /nes-build, or when the user asks to build/compile/assemble an NES ROM, run `make` in a clear NES project, or open a .nes file in Mesen. Do NOT trigger on generic 6502 assembly, .s files for Apple II / Commodore 64 / Atari / other targets, or ambiguous "build this assembly" requests — only when the project is unambiguously NES.
+description: Build NES ROMs from 6502 assembly using ca65 + ld65 on macOS, and optionally launch the result in Mesen. Trigger on /retro-build:nes-build, or when the user asks to build/compile/assemble an NES ROM, run `make` in a clear NES project, or open a .nes file in Mesen. Do NOT trigger on generic 6502 assembly, .s files for Apple II / Commodore 64 / Atari / other targets, or ambiguous "build this assembly" requests — only when the project is unambiguously NES.
 ---
 
 # nes-build

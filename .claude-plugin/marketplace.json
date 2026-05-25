@@ -3,8 +3,8 @@
   "owner": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" },
   "plugins": [
     {
-      "name": "nes-build",
-      "source": "./plugins/nes-build",
+      "name": "retro-build",
+      "source": "./plugins/retro-build",
       "description": "Build NES ROMs from 6502 assembly using ca65 + ld65 on macOS, and optionally launch the result in Mesen."
     }
   ]
