@@ -1,0 +1,5 @@
+{
+  "name": "nes-build",
+  "description": "Build NES ROMs from 6502 assembly using ca65 + ld65 on macOS, and optionally launch the result in Mesen.",
+  "version": "0.1.0"
+}
