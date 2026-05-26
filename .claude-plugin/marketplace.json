@@ -1,16 +1,25 @@
 {
   "name": "ai-skills-marketplace",
+  "description": "Jay McGavren's personal collection of AI skill plugins.",
   "owner": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" },
   "plugins": [
     {
       "name": "retro-build",
       "source": "./plugins/retro-build",
-      "description": "Build NES ROMs from 6502 assembly using ca65 + ld65 on macOS, and optionally launch the result in Mesen."
+      "description": "Build NES ROMs from 6502 assembly using ca65 + ld65 on macOS, and optionally launch the result in Mesen.",
+      "category": "build-tools",
+      "keywords": ["nes", "6502", "ca65", "ld65", "mesen", "retro", "assembly"],
+      "license": "MIT",
+      "author": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" }
     },
     {
       "name": "todo-sh",
       "source": "./plugins/todo-sh",
-      "description": "Read the user's personal to-do list via the todo-txt CLI (`todo.sh`)."
+      "description": "Read the user's personal to-do list via the todo-txt CLI (`todo.sh`).",
+      "category": "productivity",
+      "keywords": ["todo", "todo.txt", "todo-txt", "task-list"],
+      "license": "MIT",
+      "author": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" }
     }
   ]
 }
