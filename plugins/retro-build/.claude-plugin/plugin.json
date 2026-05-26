@@ -1,5 +1,8 @@
 {
   "name": "retro-build",
   "description": "Build NES ROMs from 6502 assembly using ca65 + ld65 on macOS, and optionally launch the result in Mesen.",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "author": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" },
+  "license": "MIT",
+  "keywords": ["nes", "6502", "ca65", "ld65", "mesen", "retro", "assembly"]
 }
