@@ -33,7 +33,7 @@ On success, report the path to the produced `.nes`. **Do not launch Mesen automa
 
 The iNES header declares PRG and CHR bank counts that must match the linker config's memory sizes. A mismatch produces a ROM that loads but misbehaves silently.
 
-1. Locate the `.byte` line in the `HEADER` segment of the `.s` file. The 5th byte (index 4, after the 4-byte magic) is the PRG bank count (×16 KB = ×`$4000`); the 6th byte (index 5) is the CHR bank count (×8 KB = ×`$2000`).
+1. Locate the `.byte` line in the `HEADER` segment of the `.s` file. Bytes 0–3 are the iNES magic. Byte 4 is the PRG bank count (×16 KB = ×`$4000`); byte 5 is the CHR bank count (×8 KB = ×`$2000`).
 2. In `nes.cfg`, read `PRG: size=…` and `CHR: size=…`.
 3. Compute expected sizes: `prg_expected = prg_banks × $4000`, `chr_expected = chr_banks × $2000`.
 4. If either doesn't match, surface a clear warning — e.g. *"Header declares 2 PRG banks = $8000, but nes.cfg PRG size is $4000 — the ROM will likely not run correctly."* — and ask the user whether to proceed before linking.
