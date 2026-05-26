@@ -24,7 +24,7 @@ Once confirmed as NES, pick the right command based on what's in the directory:
 
 - **Makefile present** → `make`.
 - **No Makefile but `.s` + `.cfg` present** → before linking, run the iNES header check below; then `ca65 <name>.s -o <name>.o` and `ld65 -C <cfg> <name>.o -o <name>.nes`.
-- **Only a `.s` file** (with NES signals from Step 1) → write the default NROM linker config below to `nes.cfg` and the Makefile template below to `Makefile` (substituting the actual `.s` basename for `NAME`), tell the user you did so, run the iNES header check, then run `make`.
+- **Only a `.s` file** (with NES signals from Step 1) → show the user the default NROM linker config and Makefile templates below (substituting the actual `.s` basename for `NAME`) and ask whether to write them. Only write `nes.cfg` and `Makefile` once the user confirms. Then run the iNES header check and `make`.
 - **Multiple `.s` or `.cfg` files** with no Makefile → ask the user which to build rather than guessing.
 
 On success, report the path to the produced `.nes`. **Do not launch Mesen automatically** — wait for the user to ask.
