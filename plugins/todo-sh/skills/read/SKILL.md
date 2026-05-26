@@ -1,5 +1,6 @@
 ---
 description: Read the user's personal to-do list by running `todo.sh ls` and returning its output verbatim. This is a read-only context-provider skill — it MUST NOT add, complete, edit, prioritize, archive, or otherwise mutate any to-do item. Trigger on /todo-sh:read, when the user asks to see / show / list / dump their to-do list or todo.txt, or when another skill needs the current to-do list as context. Do NOT trigger on the harness Task tools (TaskCreate / TaskUpdate / etc. — those are unrelated in-conversation task tracking), and do NOT trigger on writing TODO comments in source code.
+allowed-tools: Bash(todo.sh ls)
 ---
 
 # read
