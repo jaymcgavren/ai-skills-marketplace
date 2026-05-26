@@ -1,0 +1,5 @@
+{
+  "name": "todo-txt",
+  "description": "Read the user's personal to-do list via the todo-txt CLI (`todo.sh`).",
+  "version": "0.1.0"
+}
