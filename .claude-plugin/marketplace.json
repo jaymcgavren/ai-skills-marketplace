@@ -8,8 +8,8 @@
       "description": "Build NES ROMs from 6502 assembly using ca65 + ld65 on macOS, and optionally launch the result in Mesen."
     },
     {
-      "name": "todo-txt",
-      "source": "./plugins/todo-txt",
+      "name": "todo-sh",
+      "source": "./plugins/todo-sh",
       "description": "Read the user's personal to-do list via the todo-txt CLI (`todo.sh`)."
     }
   ]
