@@ -4,6 +4,15 @@
   "owner": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" },
   "plugins": [
     {
+      "name": "autonomy",
+      "source": "./plugins/autonomy",
+      "description": "Set up projects so future Claude Code sessions (attended or scheduled) can pick up pending work automatically.",
+      "category": "productivity",
+      "keywords": ["todo", "task-list", "autonomy", "scheduled", "claude.md", "agents.md"],
+      "license": "MIT",
+      "author": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" }
+    },
+    {
       "name": "retro-build",
       "source": "./plugins/retro-build",
       "description": "Build NES ROMs from 6502 assembly using ca65 + ld65 on macOS, and optionally launch the result in Mesen.",
