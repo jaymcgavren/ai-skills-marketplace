@@ -1,7 +1,7 @@
 {
   "name": "ai-skills-marketplace",
   "description": "Jay McGavren's personal collection of AI skill plugins.",
-  "owner": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" },
+  "owner": { "name": "Jay McGavren", "email": "jay@mcgavren.com" },
   "plugins": [
     {
       "name": "autonomy",
@@ -10,7 +10,7 @@
       "category": "productivity",
       "keywords": ["todo", "task-list", "autonomy", "scheduled", "claude.md", "agents.md"],
       "license": "MIT",
-      "author": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" }
+      "author": { "name": "Jay McGavren", "email": "jay@mcgavren.com" }
     },
     {
       "name": "retro-build",
@@ -19,7 +19,7 @@
       "category": "build-tools",
       "keywords": ["nes", "6502", "ca65", "ld65", "mesen", "retro", "assembly"],
       "license": "MIT",
-      "author": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" }
+      "author": { "name": "Jay McGavren", "email": "jay@mcgavren.com" }
     },
     {
       "name": "todo-sh",
@@ -28,7 +28,7 @@
       "category": "productivity",
       "keywords": ["todo", "todo.txt", "todo-txt", "task-list"],
       "license": "MIT",
-      "author": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" }
+      "author": { "name": "Jay McGavren", "email": "jay@mcgavren.com" }
     },
     {
       "name": "rom-debug",

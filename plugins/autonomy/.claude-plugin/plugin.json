@@ -2,7 +2,7 @@
   "name": "autonomy",
   "description": "Set up projects so future Claude Code sessions (attended or scheduled) can pick up pending work automatically.",
   "version": "0.1.0",
-  "author": { "name": "Jay McGavren", "email": "j.mcgavren@gmail.com" },
+  "author": { "name": "Jay McGavren", "email": "jay@mcgavren.com" },
   "license": "MIT",
   "keywords": ["todo", "task-list", "autonomy", "scheduled", "claude.md", "agents.md"]
 }
