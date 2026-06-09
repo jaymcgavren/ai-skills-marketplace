@@ -104,14 +104,19 @@ For every unchecked item, run this loop, then **check it off immediately**:
 4. **Confirm it visibly happened:** `frame(op:"screenshot")`. If nothing
    changed on screen, the action may need context (on a rope, near a door…) —
    move it to `complex_actions.md` instead of forcing it.
-5. **Find the code.** Two reliable techniques (see Gotchas on why these, not PC
-   breakpoints):
+5. **Find the code.** Reliable techniques:
    - **Which byte changed:** `memory(op:"search")` before vs. after the action
      to locate the RAM byte the action drives (e.g. a player action-state byte).
    - **Which instruction wrote it:** set a **write-watchpoint**
      `breakpoint(on:"write", ...)` on that byte, repeat the action, and capture
      the writer's PC. A **read-watchpoint** (`breakpoint(on:"read")`) on the
      action-state byte finds the *dispatcher* that branches on it.
+   - **Register + RAM at a known PC, in one call:** once you have a candidate
+     handler PC, `breakpoint(on:"pc", captureMemory:[{region,offset,length,
+     label}])` returns the break-instant register file as `registersAtHit`
+     (A/X/Y/P/S) and the named RAM as `capturedMemory`, both **inline** — no
+     follow-up `cpu`/`memory` round-trip (see Gotchas: a follow-up read returns
+     end-of-frame state, not the hit instant).
    - Disassemble around the captured PC with `disasm` / `cpu` to see the handler.
 6. **Annotate the source.** Add a semantic label and a one-line comment at the
    handler — keep any existing address label as an anchor (dual-label), and
@@ -166,11 +171,22 @@ There is no in-memory progress — the disk is the source of truth:
 
 ## Gotchas (romdev)
 
-- **PC-execution breakpoints are unreliable on bank-switched code.** On
-  mappers where `$8000–$BFFF` (or equivalent) is a swapped window, a
-  `breakpoint(on:'pc')` on a banked address often never fires even as the code
-  runs. Prefer **read/write watchpoints** (core-level, they do fire) and direct
-  `memory(op:'read')` sampling to find handlers.
+- **After a `breakpoint(on:'pc')` hit, read state from the hit response — not a
+  follow-up call.** On NES/fceumm the frame *finishes* after the hit, so a
+  subsequent `cpu(op:'read')` / `memory(op:'read')` returns **end-of-frame**
+  state, not the break instant (this caused a long-standing "the registers are
+  wrong" trap). Use the inline `registersAtHit` (A/X/Y/P/S, snapshotted at the
+  instruction) and `captureMemory:[…]` → `capturedMemory` the breakpoint
+  returns. Needs romdevtools ≥0.27.0 (`registersAtHit` shipped 0.26.0,
+  `captureMemory` 0.27.0); if `registersAtHit` is `null` (older core that
+  doesn't snapshot), fall back to a write-watchpoint + the RAM side effects.
+- **On bank-switched mappers a PC breakpoint matches the CPU address regardless
+  of which bank is mapped there** — the same `$8000–$BFFF` address can alias
+  across banks, so a hit may be a *different* bank's code at that address.
+  Confirm the intended bank is live, or pair the hit with a RAM side effect
+  unique to the handler. **Read/write watchpoints** (core-level, on the RAM
+  byte) sidestep banking entirely and stay the robust default for *finding* an
+  unknown writer.
 - **Hold input with `input(op:'set')`, not one-shot presses.** Then step frames;
   the watchpoint/read inherits the held state. One-shot helpers may not inject.
 - **Account for input latency** — hold for several frames before sampling the
