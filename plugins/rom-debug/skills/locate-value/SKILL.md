@@ -21,6 +21,26 @@ a one-sitting technique.
 For a well-known commercial ROM, try `cheats(op:'lookup')` *first* — it's a
 crowd-sourced labeled RAM map, and the address you want may already be in it.
 
+(Tool names here use the `mcp__romdev__` prefix, which assumes the server was
+registered as `romdev`. If yours is registered under another name, match the
+prefix — in `allowed-tools` and when calling — to that name.)
+
+## Pick the approach: diffRuns vs. the search loop
+
+- **If an input drives the value (position, charge, a held-button effect),
+  lead with `diffRuns`** — it's a one-call answer:
+
+  ```python
+  memory(op="diffRuns", region="system_ram", frames=30, portsA=[{"right": True}])
+  ```
+
+  It runs the *same* start state twice (A = input held, B = idle) and returns
+  only the bytes that DIVERGED — the position byte, its OAM shadow, the pad
+  state, and nothing else. `minDelta:N` filters small churn.
+
+- **For everything you trigger rather than hold** (HUD numbers, pickups,
+  scripted events) use the search loop below.
+
 ## The core loop
 
 1. **Seed** the search with the value's current number:
@@ -34,12 +54,12 @@ crowd-sourced labeled RAM map, and the address you want may already be in it.
    candidate total (`maxCandidates` only caps how many are *listed*); the full
    set is kept server-side.
 
-2. **Change the value in-game.** Hold the input with `input(op:'set')` and
-   `frame(op="step", frames=...)` — held input is what reliably injects;
-   one-shot press helpers may not. Take a hit, score points, grab a pickup,
-   move. For changes that are hard to trigger headlessly (die to a specific
-   enemy, reach a boss), open `playtest(...)` and ask the human to do it, then
-   `pause()`.
+2. **Change the value in-game.** Use `input(op:'set')` to hold the input for
+   *sustained* movement and `frame(op="step", frames=...)` to advance; `press`
+   works for one-shot inputs (it always emits a released→pressed edge). Take a
+   hit, score points, grab a pickup, move. For changes that are hard to trigger
+   headlessly (die to a specific enemy, reach a boss), open `playtest(...)` and
+   ask the human to do it, then `host(op:'pause')`.
 
 3. **Narrow:**
 
@@ -67,13 +87,10 @@ narrowing, or different names to run independent searches side by side.
 - `'gt'` / `'lt'` take a `value` and keep candidates now above/below it —
   useful to drop zeroed bytes (`compare:'gt', value:0`).
 
-**The first narrow must be a value compare (`eq`/`gt`/`lt`).** The relative
-compares silently return 0 candidates when used as the *first* `searchNext`
-after a seed — the per-candidate baseline isn't populated until a value-based
-round runs (verified live: a byte that went 128→146 failed `'inc'`, `'changed'`
-*and* `'unchanged'` as the first narrow; after one `eq` round, `'inc'`/`'dec'`
-worked perfectly). For direction-only values, do one `eq` round on the *same*
-number you seeded with (don't act in between), then alternate `'inc'`/`'dec'`.
+`op:'search'` baselines every candidate at seed time, so the relative compares
+(`'inc'`/`'dec'`/`'changed'`/`'unchanged'`) work as the *first* `searchNext` —
+no warm-up `eq` round needed. Direction-only flow is just: seed → move right →
+`'inc'` → move left → `'dec'`.
 
 **The seed still needs a number** even for non-HUD values — read it out of the
 machine instead of the screen. For positions, `sprites({op:'inspect'})` (or
@@ -95,27 +112,33 @@ memory(op="diff", name="before")     # default summary view
 
 The summary view clusters the changed bytes and detects strides ("4 islands at
 stride 0x80" = a struct array), so one diff is readable instead of a flood.
-Once a cluster looks promising, switch to the search loop on it — read a byte
-in the cluster, seed `op:'search'` with that number, and narrow as above.
+`minDelta:N` drops bytes that barely moved — the tool-level version of the
+"do nothing for a few frames" counter-killer, and free. Once a cluster looks
+promising, switch to the search loop on it — read a byte in the cluster, seed
+`op:'search'` with that number, and narrow as above.
 
 ## When the search finds nothing (representation gotchas)
 
 The stored byte often isn't the displayed number. Before giving up:
 
-- **Stored ≠ displayed:** lives are frequently stored as displayed−1 (the
-  counter of *spares*); scores are often stored ÷10 when the last digit is
-  always 0. Seed with the transformed value.
-- **BCD / digit-per-byte:** NES games commonly keep the score as one byte per
-  on-screen digit. A `size:2` search for "12500" will never match. Search a
-  *single digit* with `size:1` and change the score by a known amount, or use
-  `'inc'` on the highest digit that moved.
+- **Stored ≠ displayed (game logic):** lives are frequently stored as
+  displayed−1 (the counter of *spares*); scores are often stored ÷10 when the
+  last digit is always 0. These are game-logic transforms, not encodings —
+  seed with the transformed value.
+- **Packed BCD / digit-per-byte (encoding):** don't decode these by hand — pass
+  the representation to `op:'search'`. `as:'bcd'` matches packed BCD (2 decimal
+  digits per byte, the classic NES score); `as:'digits'` matches one byte per
+  on-screen digit at ANY constant tile base (raw 0, ASCII $30, or the game's
+  font base — auto-detected per candidate and reported as `digitBase`).
+  `searchNext` keeps comparing in the seed's representation, including numeric
+  `inc`/`dec` on the decoded value.
 - **Endianness/width:** multi-byte values are little-endian on these CPUs; if
   `size:1` rounds keep emptying the candidate list, retry the whole loop with
   `size:2`.
-- **Some values defeat every simple representation** (split across non-adjacent
-  bytes, tile-index display buffers, checkpoint copies). Don't keep guessing
-  encodings: switch to the snapshot/diff workflow with a *tight* window — pause,
-  trigger exactly one change event, diff — and decode whatever cluster moves.
+- **Some values defeat every representation** (split across non-adjacent bytes,
+  tile-index display buffers, checkpoint copies). Don't keep guessing: switch to
+  the snapshot/diff workflow with a *tight* window — pause, trigger exactly one
+  change event, diff — and decode whatever cluster moves.
 
 ## Confirm the hit
 
@@ -134,16 +157,25 @@ behavior (set HP to 1, take a hit, die).
 ## Follow-ups
 
 The address is usually a means, not the end. `breakpoint(on:'write')` on it,
-repeat the in-game change, and the hit's PC is the exact instruction that owns
-the value — `disasm` around it to read the handler. Annotate the disassembly
-and record the address in the project's RAM map doc if it has one. Watchpoints
-are core-level and keyed to the RAM byte, so bank switching can't fake them.
+repeat the in-game change, and the hit's `pc` is the exact instruction that
+owns the value — `disasm` around it to read the handler. On every platform the
+hit response carries `registersAtHit` (the register file frozen at the hit
+instant) and the CPU stays frozen until you clear the hit — read those
+registers straight from the response, never a follow-up `cpu(op:'read')`. For a
+write hit, `valueByte` is the one byte that actually landed (not the operand).
+Annotate the disassembly and record the address in the project's RAM map doc if
+it has one. Watchpoints are core-level and keyed to the RAM byte, so bank
+switching can't fake them.
 
 ## Gotchas (romdev)
 
-- **Close the playtest window before deterministic stepping** — its real-time
-  loop fights `frame(op:'step')` and overshoots state loads. Use it for
-  human-driven changes, close it (`playtestStop`) for your own probing.
+- **The playtest window only fights you while a human is actively pressing**
+  (~2s). `frame`/`input` responses carry a `humanCoDriveWarning`, and
+  `playtest({op:'status'})` / `catalog({op:'status'})` expose `humanInputActive`,
+  so you'll know. You can leave the window open and `host({op:'pause'})` for
+  frozen-deterministic probing, use a second session (different
+  `x-romdev-session` header) for full isolation, or close it with
+  `playtest({op:'stop'})`.
 - **Hold input with `input(op:'set')` and account for latency** — step several
   frames before assuming the action registered; sampling on frame 1 reads the
   pre-action value and poisons a `'changed'`/`'inc'` round.
@@ -154,14 +186,15 @@ are core-level and keyed to the RAM byte, so bank switching can't fake them.
 - **`op:'write'` takes `hex` or `base64` only** — `data`, `bytes`, and arrays
   are rejected.
 - **Pause between rounds.** A running emulator keeps mutating RAM between your
-  action and the `searchNext`; `pause()` (or stepping exact frame counts) keeps
-  each round's before/after honest.
+  action and the `searchNext`; `host({op:'pause'})` (or stepping exact frame
+  counts) keeps each round's before/after honest.
 - **Narrow in short bursts and screenshot when a round goes to 0.** If the
   player dies or the scene changes mid-step, the value vanishes and *every*
   candidate fails the round (verified live: the ship was exploding during a
   20-frame "move right" step — `'inc'` returned 0 across the board). Save a
   state before narrowing, step 4–8 frames per round, and on a surprise empty
-  round look at the screen before blaming your compare op.
+  round look at the screen before blaming your compare op (the server's own
+  0-candidates note now flags this too).
 - **A candidate that matches one round can still be a coincidence.** Two bytes
   matched "score÷10" once and were exposed on the very next `eq` round. Never
   trust a single round; the loop converging twice is the signal.
