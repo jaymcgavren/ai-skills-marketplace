@@ -1,8 +1,8 @@
 {
   "name": "rom-debug",
-  "description": "Drive a retro game through romdev to discover and document what each player input does in the code — reach gameplay from a save state, exercise every action, and annotate the source as you go.",
-  "version": "0.1.0",
+  "description": "Reverse-engineer retro games through romdev: map every player input to the code it triggers, and locate the RAM address behind any observable game value.",
+  "version": "0.3.0",
   "author": { "name": "Jay McGavren", "email": "jay@mcgavren.com" },
   "license": "MIT",
-  "keywords": ["romdev", "reverse-engineering", "disassembly", "nes", "retro", "input", "documentation"]
+  "keywords": ["romdev", "reverse-engineering", "disassembly", "nes", "retro", "input", "documentation", "ram", "memory-search", "cheat-engine"]
 }
