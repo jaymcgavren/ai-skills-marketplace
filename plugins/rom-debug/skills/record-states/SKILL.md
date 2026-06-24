@@ -30,7 +30,12 @@ ANALYSIS sessions will annotate). If there's no disassembly yet, use
 
 (Tool names here use the `mcp__romdev__` prefix, which assumes the server was
 registered as `romdev`. If yours is registered under another name, match the
-prefix — in `allowed-tools` and when calling — to that name.)
+prefix — in `allowed-tools` and when calling — to that name. A plugin install,
+for example, registers them as `mcp__plugin_rom-debug_romdev__…`. The romdev
+tools may also be **deferred** — registered by name but with their schemas not
+loaded — so a call can fail with the tool "not available"; load its schema first
+(e.g. via `ToolSearch`) and retry. A spawned subagent inherits the same deferral
+and must load the romdev tool schemas before its first call too.)
 
 ## Step 0 — Set up the data folder
 
