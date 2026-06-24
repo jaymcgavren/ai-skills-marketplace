@@ -150,6 +150,13 @@ After the subagent returns, the orchestrator:
 > path:".../states/<name>.state")` (find the slot with `state(op:"list")`).
 > But the default is the agent saving it, so the human only has to play + pause.
 
+> **Capture opportunistically — the planned list is a menu, not a script.** The
+> human sees the game live; when they call out that something interesting is one
+> input away ("an enemy's about to hit me", "a pickup is drifting in"), pause and
+> save it on the spot, then name it after the fact. Some of the best
+> one-input-from-event states are ones nobody planned — don't make the human
+> re-navigate to a named target when the moment is already on screen.
+
 ## Recommended-menu categories
 
 Game-agnostic starting points (the human adds specifics). The best state puts a
