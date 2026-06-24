@@ -1,5 +1,5 @@
 ---
-description: Build a reusable library of save states for documenting a retro ROM, using the romdev MCP. A human plays each notable moment in a playtest window and the agent records the state to disk, paired with a per-state analysis task for later sessions. Trigger on /rom-debug:record-states, or when the user asks to record/capture save states for reverse-engineering a game, set up a state library so future sessions can analyze specific moments, or "park the game at the interesting bits so we can document them later". The capture loop is guided by sonnet subagents; the analysis itself is left as a checklist.
+description: Build a reusable library of save states for documenting a retro ROM, using the romdev MCP. A human plays each notable moment in a playtest window and the agent records the state to disk, paired with a per-state analysis task for later sessions. Trigger on /rom-debug:record-states, or when the user asks to record/capture save states for reverse-engineering a game, set up a state library so future sessions can analyze specific moments, or "park the game at the interesting bits so we can document them later". The capture loop is run interactively — the orchestrator drives it directly by default, optionally delegating to a sonnet subagent; the analysis itself is left as a checklist.
 allowed-tools: Read Write Edit Task AskUserQuestion Bash(echo *) Bash(basename *) Bash(git rev-parse --show-toplevel) Bash(mkdir *) Bash(ls *) Bash(test *) Bash(cp *) mcp__romdev__loadMedia mcp__romdev__state mcp__romdev__playtest mcp__romdev__frame mcp__romdev__memory mcp__romdev__sprites mcp__romdev__input mcp__romdev__host mcp__romdev__cpu mcp__romdev__catalog mcp__romdev__platform
 ---
 
@@ -20,9 +20,12 @@ analysis. The unchecked ANALYSIS items are left for later or scheduled sessions
 sessions recognize them.
 
 The capture loop is long, interactive, and token-heavy — Claude can't navigate
-an unfamiliar game, so a human drives while the agent watches and records. That
-loop runs in **sonnet** subagent(s); the session that invokes the skill stays a
-thin orchestrator.
+an unfamiliar game, so a human drives while the agent watches and records. The
+session that invokes the skill (the orchestrator) runs that loop **directly** by
+default: it is the agent that can prompt the human (`AskUserQuestion`) and record
+each state. You *may* delegate the loop to a **sonnet** subagent to save
+orchestrator tokens — but only if your harness lets a subagent reach the human
+(many do not; see Step 2). Otherwise the orchestrator owns the loop.
 
 This skill assumes a romdev disassembly project already exists (what later
 ANALYSIS sessions will annotate). If there's no disassembly yet, use
@@ -64,10 +67,20 @@ later capture loads it as the starting point.
 > future session's "get to the interesting moment" from minutes of navigation
 > into one `state(op:'load')`. Record once, reuse forever.
 
-## Step 2 — Spawn the sonnet capture-guide subagent
+## Step 2 — Run the capture loop
 
-The orchestrator hands the whole interactive loop to a **sonnet** subagent, then
-on its return verifies the files, backs them up into the repo, and reports.
+**By default the orchestrator runs the capture loop directly** — the Steps under
+"The capture loop" below, once per target state, interviewing the human with
+`AskUserQuestion` and recording each state itself. This is the reliable path: the
+orchestrator is the agent the human can actually answer.
+
+**Optional delegation (token-saving, harness-permitting).** You may hand the
+whole loop to a **sonnet** subagent and stay a thin orchestrator — but first
+confirm the subagent can actually drive it. In many harnesses a subagent has
+**no `AskUserQuestion` and its plain-text prompts are not surfaced to the human**,
+so it cannot run an interactive loop at all; it also inherits the deferred romdev
+tools (it must load their schemas before its first call). If either is true, do
+**not** delegate — run the loop yourself. When delegation does work, spawn:
 
 ```
 Task(subagent_type="general-purpose", model="sonnet",
@@ -97,11 +110,13 @@ whole run — never open a second interactive window.
 """)
 ```
 
-`model="sonnet"` is the point of this skill — the heavy interactive work must
-land on sonnet. The orchestrator (whatever model invoked the skill) does only
-Step 0/1, this spawn, and the post-return verification.
+When you do delegate, `model="sonnet"` keeps the heavy interactive work off the
+orchestrator, which then does only Step 0/1, the spawn, and the post-return
+verification below. If you ran the loop yourself, you already did the per-capture
+work inline — the same verification still applies.
 
-After the subagent returns, the orchestrator:
+After the loop finishes (the subagent returns, or the orchestrator's own run
+ends), the orchestrator:
 
 1. Confirms each promised `$DATA/states/<name>.state` exists (`ls`/`test`).
 2. Confirms each is **already** backed up in the **repo's** `states/` dir (the
@@ -111,7 +126,7 @@ After the subagent returns, the orchestrator:
    file; every CAPTURE has a paired ANALYSIS).
 4. **Reports** (see below).
 
-## The capture loop (run by the sonnet subagent, once per target state)
+## The capture loop (run by whoever owns the loop — the orchestrator by default, once per target state)
 
 1. **Open the window:**
    `playtest(op:"open", scale:3, title:"Record <name> — play to <moment>, pause, and let me know")`.
