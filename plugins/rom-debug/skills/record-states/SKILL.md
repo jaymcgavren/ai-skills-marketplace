@@ -134,6 +134,14 @@ After the subagent returns, the orchestrator:
    intended moment. Note a few concrete live RAM/slot values (player state byte,
    populated object slots, on-screen entity count) to enrich the analysis brief;
    those observations are what make the ANALYSIS item actionable later.
+   **For a one-input-from-event capture, prove it actually triggers.** The
+   on-disk file stays frozen at the cusp, but the loaded copy is a throwaway:
+   resume if paused, `frame(op:"step", frames:N)`, and assert the event really
+   fires (lives 2→1, a weapon-index byte 00→04, a boss-HP tick) — a frame that
+   merely *looks* right may not. Record the before→after byte delta in the
+   ANALYSIS brief: it confirms the state is genuine and hands the later session
+   the exact byte to set a watchpoint on. Re-`load` the file afterward to return
+   the host to the cusp.
 5. **Write the checklist entries** (CAPTURE checked, ANALYSIS unchecked) in the
    format below, then move to the next target.
 
