@@ -104,7 +104,8 @@ Step 0/1, this spawn, and the post-return verification.
 After the subagent returns, the orchestrator:
 
 1. Confirms each promised `$DATA/states/<name>.state` exists (`ls`/`test`).
-2. Backs each one up into the **repo's** `states/` dir, the durable copy:
+2. Confirms each is **already** backed up in the **repo's** `states/` dir (the
+   capture loop copies it per-capture); re-copies any that's missing:
    `mkdir -p "$REPO/states" && cp "$DATA/states/<name>.state" "$REPO/states/"`.
 3. Sanity-checks `record_states.md` (every CAPTURE that's `[x]` has a real
    file; every CAPTURE has a paired ANALYSIS).
@@ -142,7 +143,11 @@ After the subagent returns, the orchestrator:
    ANALYSIS brief: it confirms the state is genuine and hands the later session
    the exact byte to set a watchpoint on. Re-`load` the file afterward to return
    the host to the cusp.
-5. **Write the checklist entries** (CAPTURE checked, ANALYSIS unchecked) in the
+5. **Back up to the repo immediately:** `mkdir -p "$REPO/states"` then
+   `cp "$DATA/states/<name>.state" "$REPO/states/"`. Do this per-capture, not in
+   a batch at the end — a long interactive run is routinely interrupted, and an
+   in-loop copy means every state already captured survives the interruption.
+6. **Write the checklist entries** (CAPTURE checked, ANALYSIS unchecked) in the
    format below, then move to the next target.
 
 > Optional: a human who'd rather use the **emulator's own save-state hotkey**
