@@ -118,10 +118,11 @@ this as advisory — **Step 3's own `cmp` is the authoritative proof.**
   mix, so it falls back to the byte-exact **data-only floor** (everything as
   `.byte`). This still rebuilds byte-identical; it just means readability has
   to be earned address-by-address later. It is **not** a failure.
-- **Padding fakes high readability.** A bank that's all `$FF` (or `$00`) fill
-  disassembles into junk instructions (`sbc $FFFFFF,x` …) and reports ~100%
-  readable. High % ≠ meaningful code — spot-check that a "readable" bank isn't
-  just the ROM's padding tail before you trust the number.
+- **Uniform-fill regions are flagged, not scored.** A bank that's all `$FF` (or
+  `$00`) padding reports `readablePercent: null` + `fill: true` + `fillByte`, is
+  excluded from `readablePercentAvg`, and is counted in the payload's
+  `fillRegions`. Key off `fill === true`; treat `readablePercent: null` as "not
+  code," never as a percentage.
 
 **Gotcha:** the rebuild manifest contains *absolute paths*. If you move or
 rename the project directory, regenerate it (rerun `disasm(target='project')`
@@ -215,7 +216,8 @@ Cheap, high-value structural facts to gather while everything is fresh:
    TODO items with their addresses.
 3. **Data vs. code**: on CPUs that disassemble cleanly, add "- [ ] Identify
    contents of bankN (graphics? music? level data?)" for low-`readablePercent`
-   banks. **On the 65816 data-only floor this heuristic doesn't work** — every
+   banks (skip `fill: true` regions — those are padding, not data).
+   **On the 65816 data-only floor this heuristic doesn't work** — every
    bank is `.byte`, so instead seed one task to establish the carve-from-`.byte`
    workflow (pick a known code address → `disasm(target='rom', startAddress,
    endAddress)` or the live debugger for real instructions → convert that range
