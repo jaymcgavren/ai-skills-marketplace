@@ -91,22 +91,23 @@ One call, all banks. It writes:
 - `BUILD.md` — human-readable rebuild recipe. **Always present; it is the
   authoritative rebuild instructions for this platform** — read it in Step 3.
 
-**Large-ROM timeout (expect it).** On a ROM more than a few hundred KB the MCP
-call often **times out even though the job completes server-side** — the tool
-keeps writing files after the call returns an error. Don't treat a timeout as
-failure and don't rerun blindly. Instead poll the output dir until the glue
-files land, then continue:
+**Large ROMs — run it in the background.** For a ROM more than ~512 KB, start
+with the detached form so a long reassembly can't time out the call:
 
-```bash
-until [ -f /abs/path/repo/src/reassemble.json ] && [ -f /abs/path/repo/src/BUILD.md ]; do sleep 5; done
-ls /abs/path/repo/src/
+```python
+disasm(target="project", path="/abs/path/game.<ext>", outputDir="/abs/path/repo/src",
+       background=True)                                  # returns {jobId} immediately
+disasm(target="project", job="<jobId>", outputDir="/abs/path/repo/src")   # poll
 ```
 
-**Reading the response (if you got one).** If the call returned instead of
-timing out, skim it: `roundTrip.allByteExact` should be `true`, and
-`readablePercent` per region reports instructions vs. raw `.byte`. But treat
-this as advisory only — **Step 3's own `cmp` is the authoritative proof**,
-and it's the one that runs regardless of whether the response arrived.
+The poll reports `regionsDone/regionsTotal` while running, then returns the same
+completion payload the sync call would. (Banks reassemble concurrently, capped
+by `ROM_DEV_WASM_POOL_SIZE`, default 2.) The sync form above stays the default
+for normal-size ROMs.
+
+**Reading the response.** Skim it: `roundTrip.allByteExact` should be `true`,
+and `readablePercent` per region reports instructions vs. raw `.byte`. Treat
+this as advisory — **Step 3's own `cmp` is the authoritative proof.**
 
 **Interpreting `readablePercent` (CPU-dependent — don't over-read it):**
 
