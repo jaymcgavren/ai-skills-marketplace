@@ -90,6 +90,8 @@ One call, all banks. It writes:
   Step 4, never committed.
 - `BUILD.md` — human-readable rebuild recipe. **Always present; it is the
   authoritative rebuild instructions for this platform** — read it in Step 3.
+- `.gitignore` — written (or appended-deduped) to keep ROM data out of git; see
+  Step 4. The payload reports `romProtected: ".gitignore"`.
 
 **Large ROMs — run it in the background.** For a ROM more than ~512 KB, start
 with the detached form so a long reassembly can't time out the call:
@@ -171,12 +173,14 @@ repo/
   TODO.md              # annotation backlog (checkbox list)
 ```
 
-- `git init` (if needed); write `.gitignore` **before** the first `git add`,
-  and make it cover both build scratch *and all ROM data*:
-  `build/`, `hack-src/`, `*.o`, `*.state`, the ROM extension(s) for this
-  platform (`*.sfc`, `*.gb`, …), and `*.rom` (catches `src/original.rom`).
-  Do not add comments to `.gitignore` unless the repo's existing one uses
-  them. After scaffolding, verify nothing ROM-shaped is staged:
+- `git init` (if needed). `disasm(target='project')` already wrote a
+  `.gitignore` covering all ROM data (`original.rom`, the platform ROM
+  extensions, and the `.romdev-job.json` status file) and reports
+  `romProtected: ".gitignore"` — so ROM protection is handled; it appends-and-
+  dedupes if the repo already had one. **Before the first `git add`,** append the
+  build-scratch entries it doesn't cover: `build/`, `hack-src/`, `*.o`, `*.state`
+  (match the file's existing style — no comments unless it already uses them).
+  Then verify nothing ROM-shaped is staged:
   `git ls-files | grep -Ei '\.(rom|nes|sfc|smc|gb|gbc|md|gen|bin)$'` must
   print nothing.
 - **The rebuild needs `src/original.rom` locally.** Because it's git-ignored,
