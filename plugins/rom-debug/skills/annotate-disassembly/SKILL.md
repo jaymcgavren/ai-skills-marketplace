@@ -132,15 +132,9 @@ one level lower, by **carving** proven-code ranges out of the `.byte` data:
      CPU you're hand-tracking widths against the bytes anyway, so a byte dump
      is often all `target='rom'` would have given you.
 3. **Convert the `.byte` range in `hack-src/`, never directly in `src/`.**
-   The scratch copy goes stale between sessions and may also hold unpromoted
-   experiments: before carving, `diff` the file you're about to edit against
-   canonical `src/` — if the only differences are things `src/` already has,
-   refresh that one file with a plain copy. Never bulk-mirror the whole tree
-   with a deleting sync; anything unpromoted in the scratch copy is
-   unrecoverable. Find the lines by arithmetic: each bank file's header
-   comment records its base address and file offset, and the emitted `.byte`
-   rows are 16 bytes each from the `.org`. Rules that keep the assembler's
-   output identical:
+   Find the lines by arithmetic: each bank file's header comment records its
+   base address and file offset, and the emitted `.byte` rows are 16 bytes
+   each from the `.org`. Rules that keep the assembler's output identical:
    - **Force encodings the assembler would otherwise shorten.** Assemblers
      pick the smallest form by default; re-emit the original's. On ca65
      65816 that means `.a8/.a16/.i8/.i16` directives at every `rep`/`sep`
@@ -173,10 +167,7 @@ one level lower, by **carving** proven-code ranges out of the `.byte` data:
 byte-identical rebuild only says your carve *re-emits* the original — it says
 nothing about whether your comments describe what the code *does*. On a
 dynamic-width CPU, the durable proof of the decode itself is live: arm a
-`breakpoint(on='pc')` at the entry — the hit's `registersAtHit` status
-register is itself evidence, proving the entry decode state (65816: the P
-register's M/X bits are the `.a8`/`.i16` declarations, read live instead of
-assumed) — then ONE
+`breakpoint(on='pc')` at the entry, then ONE
 `frame(op='stepInstructions', count=N)` call returns an ordered `{pc, width}`
 trace across the whole carved range — every PC delta checks a decoded
 instruction length (a mismatched `.a8`/`.i16` immediate shows up immediately
@@ -189,18 +180,6 @@ blocks that don't fire in the captured state by injecting the gate variable
 how you verify a path the idle state never takes. Cite both in the header
 ("every boundary live single-stepped; body forced via `$DC:=$0100`") so the
 grade is legible next session.
-
-**Gate-forcing scales from one branch to a whole call path.** When the frame
-handler dispatches on a mode/state byte and an entire family of callees never
-runs in your anchor state, don't reach for a synthetic `cpu(op='call')` first
-— poke the state byte itself (after banking a save state) and let the game's
-own dispatcher call them. Breakpoints then fire from the real call sites, so
-the trace's entry widths and return addresses are genuine, which a hand-forged
-call can't give you. Unexplored siblings on the same path will run too; the
-save-state restore contains whatever they do. When a state-byte poke works,
-record it in TODO.md (e.g. "`$19:=4` at the title screen drives the whole
-`$19` dispatch path live") — it's a reusable key to that path, and it can
-spare every later session from needing a gameplay save state.
 
 Carve breadth-first — entry points (reset, the vblank/NMI handler) and the
 routines your traces actually hit — not bank-at-a-time sweeps. A carved
