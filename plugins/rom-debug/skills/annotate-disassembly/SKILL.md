@@ -7,18 +7,14 @@ allowed-tools: Read Write Edit Bash AskUserQuestion mcp__romdev__memory mcp__rom
 
 Turn a byte-exact but semantically empty disassembly (see `disassemble-rom`)
 into commented, navigable source — one verified behavior at a time. The method
-is **dynamic first**: instead of staring at raw assembly and guessing, you run
-the game under the debugger, make the behavior happen (usually by *injecting*
-it, not playing to it), and let a breakpoint tell you which code is
-responsible. Static tools (`xrefs`, `cfg`, `decompile`) then fill in the
-surrounding structure.
+is **dynamic first**: instead of staring at 6502 and guessing, you run the
+game under the debugger, make the behavior happen (usually by *injecting* it,
+not playing to it), and let a breakpoint tell you which code is responsible.
+Static tools (`xrefs`, `cfg`, `decompile`) then fill in the surrounding
+structure.
 
 Prerequisites: a project with canonical `src/`, a rebuild recipe, `TODO.md`,
-and `RAM_MAP.md`. Load the ROM (`loadMedia`) at session start. Rebuild with
-the recipe the project's CLAUDE.md records — don't assume a particular
-platform's path. `build({output:'reassemble'})` is the universal one (all
-classic platforms); some projects ship a platform-native recipe instead
-(e.g. NES cc65 `build({output:'rom'})`).
+and `RAM_MAP.md`. Load the ROM (`loadMedia`) at session start.
 
 (Tool names use the `mcp__romdev__` prefix, which assumes the server was
 registered as `romdev`; match the prefix to your registered name. If the
@@ -86,57 +82,8 @@ several in one sitting (each `state(op='save', path=...)` is instant).
 transitional moment can have key dispatchers not running — code you're
 watching never executes and everything looks dead. Before trusting a state
 for tracing, set a breakpoint on a routine you *know* runs constantly (the
-vblank/NMI handler, the main loop) and confirm it fires within a few frames.
-If it
+NMI handler, the main loop) and confirm it fires within a few frames. If it
 doesn't, advance frames to a live moment and re-save.
-
-## When the disassembly is a data-only floor (carve first)
-
-Some projects don't start with readable instructions: on platforms where the
-disassembler can't statically prove what's code (documented case: SNES —
-the 65816's `rep`/`sep` register-width state defeats static decoding; the
-same applies anywhere decode state is dynamic, e.g. ARM-vs-Thumb on GBA),
-`disassemble-rom` emits entire banks as `.byte` rows — byte-exact, 0%
-readable. The project's CLAUDE.md and bank-file headers say so. There are no
-instructions to comment and no auto-labels to rename yet; annotation starts
-one level lower, by **carving** proven-code ranges out of the `.byte` data:
-
-1. **Prove it's code before carving.** Entry points come from the platform's
-   vector/header layout (6502 vectors at `$FFFA`; SNES header+vectors at
-   `$00FFC0–$00FFFF`; GB entry/RST/IRQ vectors at `$0000–$0104`; m68k vector
-   table at `$000000`), from the auto-detected function list, and — the real
-   proof — from the live debugger: a `breakpoint(on='pc')` that fires at an
-   address, or a `watch(on='pc')` coverage trace over a range, shows actual
-   execution.
-2. **Decode the range** (`disasm(target='rom')` on the address range, or
-   step the live core), tracking any dynamic decode state across it — on
-   65816 that's the `rep`/`sep` width changes; each immediate's size depends
-   on the state at that instruction.
-3. **Convert the `.byte` range in `hack-src/`, never directly in `src/`.**
-   Find the lines by arithmetic: each bank file's header comment records its
-   base address and file offset, and the emitted `.byte` rows are 16 bytes
-   each from the `.org`. Rules that keep the assembler's output identical:
-   - **Force encodings the assembler would otherwise shorten.** Assemblers
-     pick the smallest form by default; re-emit the original's. On ca65
-     65816 that means `.a8/.a16/.i8/.i16` directives at every `rep`/`sep`
-     (immediate widths) and `f:`/`a:` operand prefixes where the original
-     used long/absolute addressing on a numerically small operand. Other
-     CPUs/assemblers have their own equivalents — the principle is the same.
-   - **Literal addresses are fine as operands** (`jsr $8241`, `brl $80E5`) —
-     no label needed for targets still buried in `.byte` data. Define labels
-     only for branch targets inside the carve.
-   - **Start and end on instruction boundaries**, and keep the leftover
-     bytes of a partially-converted `.byte` row as a shorter `.byte` row.
-4. **Rebuild + `cmp`, then promote.** Only a byte-identical carve moves to
-   canonical `src/` (copy the file, rebuild from `src/`, `cmp` again,
-   commit). The reassemble path's refusal to accept length changes works in
-   your favor: a wrong width or shortened encoding changes the length and
-   fails loudly.
-
-Carve breadth-first — entry points (reset, the vblank/NMI handler) and the
-routines your traces actually hit — not bank-at-a-time sweeps. A carved
-routine's header cites its evidence like any other annotation, and each carve
-makes the surrounding `.byte` mass more navigable.
 
 ## The loop (one behavior per iteration)
 
@@ -162,15 +109,11 @@ touches it partially legible — the RAM map is the program's variable names.
   trips is your routine. This beats any amount of static reading.
 - `disasm(target='references', address=...)` / `disasm(target='xrefs')` for
   who calls it. **Limitation:** static reference scans miss indirect and
-  jump-table dispatch — object-state dispatchers are common in engines on
-  every platform. If a routine has no visible callers, it's probably
-  table-dispatched: use `breakpoint(on='execute')` and see what the
-  stack/registers say at entry, or `disasm(target='pointerTable')` on a
-  suspected table (`reverseHandler` answers "which state index lands
-  here?"). CPUs with explicit far calls (65816 `jsl`, m68k absolute `jsr`)
-  make cross-bank callers findable statically; window-banked platforms (NES
-  mappers, GB MBC, Sega mappers) hide different callers behind the same CPU
-  address, so expect to lean on the dynamic tools more there.
+  jump-table dispatch — common in NES engines (object-state dispatchers). If
+  a routine has no visible callers, it's probably table-dispatched: use
+  `breakpoint(on='execute')` and see what the stack/registers say at entry,
+  or `disasm(target='pointerTable')` on a suspected table (`reverseHandler`
+  answers "which state index lands here?").
 - `disasm(target='cfg')` and `disasm(target='decompile')` to understand the
   routine's shape once you've pinned it. Decompiled pseudocode is for *your*
   comprehension — comments go on the asm.
@@ -185,22 +128,17 @@ breakpoints are volatile: re-apply after `state(op='load')` or a reset.
 ### 4. Write the annotation
 
 - Rename auto-labels (`L8F78` → `PlayerDeathHandler`) at the definition and
-  every reference (on a data-only floor there are none yet — you create the
-  names as you carve). Name routines for what they *do*, data for what it
-  *is*.
+  every reference. Name routines for what they *do*, data for what it *is*.
   **Do it safely:** `grep -rn "L8F78" src/` across *all* bank files first to
   see every occurrence (definition + callers can span banks), replace them
   all, then rebuild + `cmp`. A *partial* rename is self-catching — the
   assembler fails on the now-undefined symbol — so the danger isn't a silent
   byte change, it's a broken build; the `cmp` gate catches both.
 - **Prefer inserting comment lines *above* a line over editing the line
-  in place.** Disassembly lines often carry wide, exact comment columns
+  in place.** Disassembly lines carry wide, exact comment columns
   (`; 8000 86 10  ..`); an in-line `Edit` has to match that whitespace
   exactly and often fails. A new comment line above the instruction (or a
   header block above the routine) is lower-friction and just as useful.
-  When you write carved instructions yourself, give each one an address
-  comment (`; $8053`) — data-only banks have no per-line addresses, and
-  those comments are what makes the file navigable next session.
 - Comment the routine header with what it does **and the evidence grade**:
   "verified: write-breakpoint on $32 fired here on death" is durable;
   "inferred from callers, unverified" tells the next session what still
@@ -229,6 +167,6 @@ If breakpoints don't fire or nothing responds: (a) confirm the state is live
 (see gotcha above); (b) question your input assumptions — games bind actions
 to unexpected buttons, and holding the wrong one can mask a whole subsystem;
 (c) confirm your poke actually landed by reading it back; (d) check you're in
-the right bank — on window-banked platforms the same CPU address means
-different code after a bank switch. Vary one assumption at a time, and ask
-the human what *they* do to trigger the behavior on real hardware.
+the right bank — the same CPU address means different code after a bank
+switch. Vary one assumption at a time, and ask the human what *they* do to
+trigger the behavior on real hardware.
