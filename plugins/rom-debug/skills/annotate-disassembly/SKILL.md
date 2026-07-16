@@ -202,6 +202,15 @@ record it in TODO.md (e.g. "`$19:=4` at the title screen drives the whole
 `$19` dispatch path live") — it's a reusable key to that path, and it can
 spare every later session from needing a gameplay save state.
 
+**Pick forced values that make the output predictable.** When the body you're
+driving *computes* something, don't force flags to bare 1s — choose parameter
+values whose result you can predict, then read the outputs back: forcing a
+chunk index to 2 and a chunk size to `$0040` predicts a source pointer of
+base+`$80`, so the read-back (`$D7=$B880`, count=`$0040`, index bumped to 3)
+proves the multiply-loop *semantics*, not just that the code ran. The
+step trace validates the decode; a predicted read-back validates your
+understanding of it. Distinctive values also can't be mistaken for residue.
+
 Carve breadth-first — entry points (reset, the vblank/NMI handler) and the
 routines your traces actually hit — not bank-at-a-time sweeps. A carved
 routine's header cites its evidence like any other annotation, and each carve
@@ -261,7 +270,12 @@ touches it partially legible — the RAM map is the program's variable names.
 to hold a value, *read the byte back* to confirm it actually took —
 `applied: true` does not mean the memory changed (short-form addresses can be
 silently ignored; some cores don't re-poke frozen values). Cheats and
-breakpoints are volatile: re-apply after `state(op='load')` or a reset.
+breakpoints are volatile: re-apply after `state(op='load')` or a reset. And
+when the values you're forcing are *adjacent* (a routine's parameter block),
+poke them individually or re-read the whole set afterward — a single range
+write is an easy way to silently zero a neighboring parameter you meant to
+keep (a 6-byte write aimed at `$DE`/`$E0`/`$E1` also flattens the mask at
+`$DF` sitting between them).
 
 ### 4. Write the annotation
 
