@@ -23,7 +23,9 @@ registered as `romdev`; match the prefix to your registered name.)
 
 **1. Byte-exact or it didn't happen.** Renaming labels and adding comments
 never changes emitted bytes — but verify anyway: rebuild and `cmp` against the
-original ROM before every commit. Never commit a mismatch. Experimental
+original ROM before every commit. Never commit a mismatch. At session start,
+rebuild the *untouched* checkout once and confirm it is still byte-identical,
+so any later mismatch is attributable to this session's edits. Experimental
 *behavioral* edits (testing a hypothesis by patching code) go in the
 git-ignored `hack-src/` copy, never in canonical `src/`.
 
@@ -100,13 +102,33 @@ touches it partially legible — the RAM map is the program's variable names.
   who calls it. **Limitation:** static reference scans miss indirect and
   jump-table dispatch — common in NES engines (object-state dispatchers). If
   a routine has no visible callers, it's probably table-dispatched: use
-  `breakpoint(on='execute')` and see what the stack/registers say at entry,
+  `breakpoint(on='pc')` and see what the stack/registers say at entry,
   or `disasm(target='pointerTable')` on a suspected table (`reverseHandler`
   answers "which state index lands here?").
+- **Read the hit, not the aftermath:** a `breakpoint` hit returns
+  `registersAtHit` (the register file at the break instant — a follow-up
+  `cpu(op='read')` gives end-of-frame state instead) and takes
+  `captureMemory:[…]` to read RAM at the hit in the same call. One breakpoint
+  call with both replaces a break + two reads. `pressDuring` schedules input
+  during the wait ("hold Start at frame 60") so driving the game to the
+  trigger and watching for it is also one call.
 - `disasm(target='cfg')` and `disasm(target='decompile')` to understand the
   routine's shape once you've pinned it. Decompiled pseudocode is for *your*
   comprehension — comments go on the asm.
 - `cpu(op='step')` through short stretches when the flow is confusing.
+- **Prove absence, not just presence.** A PC breakpoint that never fires
+  over hundreds of frames spanning several game phases is real evidence — it
+  can disprove a plausible hypothesis (e.g. "the IRQ vector drives raster
+  effects" when the handler is a bare `rti` the CPU never reaches because
+  the main thread keeps I set). Annotate the negative with its scope ("never
+  hit across 600 frames of boot/intro/title") so a later session knows which
+  scenes are still unchecked. Give the run enough frames: boot often burns
+  hundreds of frames in init busy-waits (APU upload handshakes) before the
+  handler you're watching is even enabled.
+- **The emulator host is ephemeral.** A tool-server update or restart wipes
+  the loaded ROM, save states in memory slots, cheats, and breakpoints —
+  check `catalog(op='status')` and re-`loadMedia` before trusting any
+  dynamic result after a gap or a version bump.
 
 **Cheat/poke discipline:** after any `cheats(op='apply')` or RAM write meant
 to hold a value, *read the byte back* to confirm it actually took —
