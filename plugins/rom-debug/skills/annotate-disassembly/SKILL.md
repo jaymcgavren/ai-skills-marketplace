@@ -87,11 +87,8 @@ transitional moment can have key dispatchers not running — code you're
 watching never executes and everything looks dead. Before trusting a state
 for tracing, set a breakpoint on a routine you *know* runs constantly (the
 vblank/NMI handler, the main loop) and confirm it fires within a few frames.
-If it doesn't, advance frames to a live moment and re-save. Restore the
-anchor explicitly — `state(op='load')` first, *then* arm the breakpoint,
-rather than folding the restore into the breakpoint call; if the expected
-every-frame hit doesn't arrive within a frame or two, suspect the restore,
-not the code.
+If it
+doesn't, advance frames to a live moment and re-save.
 
 ## When the disassembly is a data-only floor (carve first)
 
@@ -110,11 +107,7 @@ one level lower, by **carving** proven-code ranges out of the `.byte` data:
    table at `$000000`), from the auto-detected function list, and — the real
    proof — from the live debugger: a `breakpoint(on='pc')` that fires at an
    address, or a `watch(on='pc')` coverage trace over a range, shows actual
-   execution. One caveat: some cores auto-run the whole reset sequence
-   during `loadMedia` before the debugger attaches (documented case:
-   snes9x), so a pc-breakpoint on one-shot boot code never fires from a
-   fresh load — carve those by static decode + the rebuild gate, and say so
-   in TODO.md.
+   execution.
 2. **Decode the range** (`disasm(target='rom')` on the address range, or
    step the live core), tracking any dynamic decode state across it — on
    65816 that's the `rep`/`sep` width changes; each immediate's size depends
@@ -123,12 +116,8 @@ one level lower, by **carving** proven-code ranges out of the `.byte` data:
      da65 aborts with `Precondition violated: StartAddr < 0x10000` for any
      CPU address outside bank 0 — i.e. exactly the higher banks you're
      usually carving. Fall back to reading the raw bytes and hand-decoding:
-     `memory(op='readCart', {cpuAddress})` with the bank encoded in the
-     address itself — the full banked CPU address (e.g. SNES `$02:87B1` is
-     `cpuAddress: 0x0287B1`), never a bank-local address plus a separate
-     `bank` param — and **cross-check the echoed `fileOffset` against the
-     offset you expect** before trusting the bytes; that check is cheap
-     insurance on any banked read or disasm call. On a dynamic-width
+     `memory(op='readCart', {cpuAddress, bank})` accepts the full CPU
+     address and returns the bytes plus the file offset. On a dynamic-width
      CPU you're hand-tracking widths against the bytes anyway, so a byte dump
      is often all `target='rom'` would have given you.
 3. **Convert the `.byte` range in `hack-src/`, never directly in `src/`.**
@@ -144,17 +133,6 @@ one level lower, by **carving** proven-code ranges out of the `.byte` data:
    - **Literal addresses are fine as operands** (`jsr $8241`, `brl $80E5`) —
      no label needed for targets still buried in `.byte` data. Define labels
      only for branch targets inside the carve.
-   - **Far operands stay literal.** Labels defined under a bank-local `.org`
-     don't carry a bank — a long/far operand written through a label
-     assembles with the wrong bank (ca65 emits bank $00). Keep far operands
-     literal (`f:$0287FE`); bare labels are fine only for bank-local forms
-     (`jsr Label`). The byte-compare gate catches the mistake, but knowing
-     the rule saves the cycle.
-   - **Width-safe routines first.** A routine whose only immediates sit
-     under decode state it sets *itself* (e.g. its own `rep`/`sep` on
-     65816) is safe to carve even when the entry state is unknown — the
-     entry-width declarations can't change the emitted bytes. Prefer such
-     routines when live evidence for the entry state is unavailable.
    - **Start and end on instruction boundaries**, and keep the leftover
      bytes of a partially-converted `.byte` row as a shorter `.byte` row.
 4. **Rebuild + `cmp`, then promote.** Only a byte-identical carve moves to
@@ -166,20 +144,19 @@ one level lower, by **carving** proven-code ranges out of the `.byte` data:
 **`cmp` proves the bytes; single-stepping proves the meaning.** A
 byte-identical rebuild only says your carve *re-emits* the original — it says
 nothing about whether your comments describe what the code *does*. On a
-dynamic-width CPU, the durable proof of the decode itself is live: arm a
-`breakpoint(on='pc')` at the entry, then ONE
-`frame(op='stepInstructions', count=N)` call returns an ordered `{pc, width}`
-trace across the whole carved range — every PC delta checks a decoded
-instruction length (a mismatched `.a8`/`.i16` immediate shows up immediately
-as a wrong-sized step), and the terminal return's landing address is
-captured in the same trace (it must be the address right after the call
-site). (On older servers without the bulk op, loop
-`frame(op='stepInstruction')`.) Drive conditional
+dynamic-width CPU, the durable proof of the decode itself is to step the live
+core across the whole carved range (`frame(op='stepInstruction')` from a
+`breakpoint(on='pc')` at the entry) and confirm two things: every PC delta
+matches the instruction length you decoded (a mismatched `.a8`/`.i16`
+immediate shows up immediately as a wrong-sized step), and the terminal
+`ret` lands on the exact address after the call site. Drive conditional
 blocks that don't fire in the captured state by injecting the gate variable
 (`memory(op='write')` the flag, then step through the taken branch) — that's
 how you verify a path the idle state never takes. Cite both in the header
 ("every boundary live single-stepped; body forced via `$DC:=$0100`") so the
-grade is legible next session.
+grade is legible next session. (This per-instruction stepping is a token
+sink — one round trip each; if the tools grow a bulk step or live-width
+disasm, prefer it.)
 
 Carve breadth-first — entry points (reset, the vblank/NMI handler) and the
 routines your traces actually hit — not bank-at-a-time sweeps. A carved
@@ -209,22 +186,11 @@ touches it partially legible — the RAM map is the program's variable names.
   trigger the behavior — by RAM injection where possible — and the PC that
   trips is your routine. This beats any amount of static reading.
 - `disasm(target='references', address=...)` / `disasm(target='xrefs')` for
-  who calls it — `references` can also scan the ROM for the address stored
-  as a raw *pointer* (`includeTableHits`, auto-on when no direct refs),
-  which finds jump-table call sites no jsr/jmp names. On banked or
-  data-floor projects where the reference scanner is unreliable, a raw
-  byte-pattern scan of the ROM image for the call encodings is cheap and
-  decisive (e.g. 65816: `jsr $87B1` = `20 B1 87` scoped to the bank that
-  can reach it; `jsl` = `22` + 24-bit address, anywhere). **Zero hits is
-  durable negative evidence** — record "no static callers: indirectly
-  dispatched or dead" in the routine header instead of guessing a caller.
-  **Limitation:** static reference scans miss indirect and
+  who calls it. **Limitation:** static reference scans miss indirect and
   jump-table dispatch — object-state dispatchers are common in engines on
   every platform. If a routine has no visible callers, it's probably
-  table-dispatched: `breakpoint(on='pc')` at its entry and read the hit's
-  `registersAtHit` snapshot (what do the stack/registers say?);
-  `breakpoint(on='jumptable')` at a suspected dispatcher records its real
-  computed targets live; or `disasm(target='pointerTable')` on a
+  table-dispatched: use `breakpoint(on='execute')` and see what the
+  stack/registers say at entry, or `disasm(target='pointerTable')` on a
   suspected table (`reverseHandler` answers "which state index lands
   here?"). CPUs with explicit far calls (65816 `jsl`, m68k absolute `jsr`)
   make cross-bank callers findable statically; window-banked platforms (NES
@@ -233,8 +199,7 @@ touches it partially legible — the RAM map is the program's variable names.
 - `disasm(target='cfg')` and `disasm(target='decompile')` to understand the
   routine's shape once you've pinned it. Decompiled pseudocode is for *your*
   comprehension — comments go on the asm.
-- `frame(op='stepInstructions', count=N)` through short stretches when the
-  flow is confusing.
+- `cpu(op='step')` through short stretches when the flow is confusing.
 
 **Cheat/poke discipline:** after any `cheats(op='apply')` or RAM write meant
 to hold a value, *read the byte back* to confirm it actually took —
@@ -264,10 +229,8 @@ breakpoints are volatile: re-apply after `state(op='load')` or a reset.
 - Comment the routine header with what it does **and the evidence grade**:
   "verified: write-breakpoint on $32 fired here on death" is durable;
   "inferred from callers, unverified" tells the next session what still
-  needs proof. Negative live evidence is a grade too — "did not fire in 600
-  title frames incl. Start presses" is honest and durable; write that
-  rather than silently upgrading a static decode. Never state a guess as
-  fact — a wrong comment poisons every later reading of that code.
+  needs proof. Never state a guess as fact — a wrong comment poisons every
+  later reading of that code.
 - Add every new address to `RAM_MAP.md` with its meaning and how it was
   verified.
 
