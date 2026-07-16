@@ -17,10 +17,7 @@ Prerequisites: a project with canonical `src/`, a rebuild recipe, `TODO.md`,
 and `RAM_MAP.md`. Load the ROM (`loadMedia`) at session start.
 
 (Tool names use the `mcp__romdev__` prefix, which assumes the server was
-registered as `romdev`; match the prefix to your registered name. If the
-romdev tools are deferred and you load them with `ToolSearch`, select them by
-their **full prefixed name** — `ToolSearch("select:mcp__romdev__loadMedia,…")`;
-bare names like `loadMedia` match nothing and silently cost a round trip.)
+registered as `romdev`; match the prefix to your registered name.)
 
 ## Two standing rules
 
@@ -65,14 +62,6 @@ them what to do in it — when you need:
 - **Domain knowledge**: someone who played the game knows there are, say,
   eight weapons and what each does. Ask before reverse-engineering a list the
   human can recite.
-
-**Known commercial title?** If the ROM turns out to be a documented game
-(the title screen usually tells you — bank a screenshot early), existing
-community RAM maps and disassemblies are a legitimate way to *prioritize
-targets and predict* what an address or routine is — use them to form
-hypotheses fast. They are never a substitute for proof: confirm each claim
-with the live debugger before you annotate, and grade it as verified only
-when your own breakpoint/watch says so, not because a wiki agreed.
 
 Batch questions into short, focused sessions with a stated purpose — not
 open-ended "play for a while". When asking them to record moments, capture
@@ -129,16 +118,6 @@ breakpoints are volatile: re-apply after `state(op='load')` or a reset.
 
 - Rename auto-labels (`L8F78` → `PlayerDeathHandler`) at the definition and
   every reference. Name routines for what they *do*, data for what it *is*.
-  **Do it safely:** `grep -rn "L8F78" src/` across *all* bank files first to
-  see every occurrence (definition + callers can span banks), replace them
-  all, then rebuild + `cmp`. A *partial* rename is self-catching — the
-  assembler fails on the now-undefined symbol — so the danger isn't a silent
-  byte change, it's a broken build; the `cmp` gate catches both.
-- **Prefer inserting comment lines *above* a line over editing the line
-  in place.** Disassembly lines carry wide, exact comment columns
-  (`; 8000 86 10  ..`); an in-line `Edit` has to match that whitespace
-  exactly and often fails. A new comment line above the instruction (or a
-  header block above the routine) is lower-friction and just as useful.
 - Comment the routine header with what it does **and the evidence grade**:
   "verified: write-breakpoint on $32 fired here on death" is durable;
   "inferred from callers, unverified" tells the next session what still
@@ -151,12 +130,6 @@ breakpoints are volatile: re-apply after `state(op='load')` or a reset.
 
 - Rebuild, `cmp` against the original ROM: must be byte-identical. Then
   commit.
-- **Batch the trivial ones.** The one-behavior-per-commit rhythm is for
-  findings that took a real trace. A cluster of self-evident leaf helpers
-  (a 4-instruction scroll-setter, a sprite-slot allocator you read at a
-  glance) doesn't each deserve its own rebuild+`cmp`+commit — verify them,
-  name them together, and commit the batch. Keep the strict one-behavior
-  rule for anything you had to prove dynamically.
 - Tick the `TODO.md` item (add follow-up items you uncovered — unexplained
   branches, suspicious tables). Note surprising dead-ends too: knowing that
   "$037B is a timer, not lives" saves the next session from re-deriving it.
