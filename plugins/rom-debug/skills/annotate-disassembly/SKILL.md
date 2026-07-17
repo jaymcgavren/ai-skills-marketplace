@@ -134,7 +134,14 @@ touches it partially legible — the RAM map is the program's variable names.
   phase* deliberately: intro/attract sequences often run on a separate code
   path that never touches gameplay subsystems (entity tables, mode
   variables), so "never fired during boot→title" says nothing about
-  gameplay — a negative there needs an in-gameplay save state.
+  gameplay — a negative there needs an in-gameplay save state. Games with
+  distinct modes (action vs. sim/menu/overworld) may run entirely separate
+  engines per mode, each with its own main loop in a different bank — and
+  they can REUSE the same RAM region for different structures, so a table
+  layout you proved in one mode is unproven in the others. A per-frame
+  routine that never fires in some mode is itself a finding worth
+  annotating: it scopes every conclusion built on that routine to the modes
+  where it runs.
 - **The emulator host is ephemeral.** A tool-server update or restart wipes
   the loaded ROM, save states in memory slots, cheats, and breakpoints —
   check `catalog(op='status')` and re-`loadMedia` before trusting any
@@ -145,6 +152,20 @@ to hold a value, *read the byte back* to confirm it actually took —
 `applied: true` does not mean the memory changed (short-form addresses can be
 silently ignored; some cores don't re-poke frozen values). Cheats and
 breakpoints are volatile: re-apply after `state(op='load')` or a reset.
+Two poke outcomes that LOOK like "wrong address" but aren't:
+
+- **The poke holds but the screen doesn't change.** HUD counters and bars are
+  often redrawn only when the *game's own code* changes the value — an
+  external poke never triggers the redraw path. Force one game-driven update
+  (take a hit, let a timer tick, respawn) before ruling the address out; the
+  next redraw will render your poked value if the address is right.
+- **The poke reverts within a frame or two.** The byte is a *derived* value.
+  Don't abandon it — write-watchpoint it, and the restorer's PC hands you the
+  next value up the derivation chain. Repeat until a poke sticks: that's the
+  true source. (An ActRaiser example: HUD population ← per-town array ←
+  recomputed every frame from the town map's house records — three
+  watchpoint hops, and the "variable" turned out to be a pure function of
+  map state.)
 
 ### 4. Write the annotation
 
@@ -200,5 +221,11 @@ If breakpoints don't fire or nothing responds: (a) confirm the state is live
 to unexpected buttons, and holding the wrong one can mask a whole subsystem;
 (c) confirm your poke actually landed by reading it back; (d) check you're in
 the right bank — the same CPU address means different code after a bank
-switch. Vary one assumption at a time, and ask the human what *they* do to
+switch; (e) **arm the watchpoint on every alias of the address**. On SNES,
+WRAM `$0000-$1FFF` is mirrored into banks $00-$3F *and* lives at
+`$7E0000-$7E1FFF`, and cores may arm only the literal bus address you gave —
+a watch on `$0218` can silently miss the game's `sta f:$7E0218`. A
+watchpoint negative is only evidence once you've covered the mirror forms
+(and the same goes for read-watches backing a "nothing consumes this"
+claim). Vary one assumption at a time, and ask the human what *they* do to
 trigger the behavior on real hardware.
