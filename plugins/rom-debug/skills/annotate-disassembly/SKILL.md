@@ -202,6 +202,18 @@ Two poke outcomes that LOOK like "wrong address" but aren't:
   fail on a dirty tree; the note is what tells that session whether to
   finish the edit or `git checkout` it, instead of misreading the
   mismatch as corruption.
+- **Inheriting a dirty tree with NO in-flight note** (the other way a
+  session can end abruptly): diff it and rebuild it before anything else.
+  If the rebuild is byte-identical, you are almost certainly holding
+  *finished work that was never persisted* — a verified find whose
+  RAM_MAP/TODO updates and commit got cut off. The evidence grade written
+  into the annotation comment is what makes this recoverable ("VERIFIED
+  LIVE: write-breakpoint fired at..." tells you the proof already
+  happened); finish the bookkeeping and commit it as its own increment
+  before starting new work. If the rebuild mismatches, treat it as a
+  failed experiment: `git checkout` it and note in TODO what was
+  attempted. This is why evidence goes in the comment, not the commit
+  message — the comment survives an interrupted session.
 
 ### Recovering misdecoded regions (65816 width desyncs and kin)
 
