@@ -124,7 +124,11 @@ touches it partially legible — the RAM map is the program's variable names.
   hit across 600 frames of boot/intro/title") so a later session knows which
   scenes are still unchecked. Give the run enough frames: boot often burns
   hundreds of frames in init busy-waits (APU upload handshakes) before the
-  handler you're watching is even enabled.
+  handler you're watching is even enabled. And pick the window's *game
+  phase* deliberately: intro/attract sequences often run on a separate code
+  path that never touches gameplay subsystems (entity tables, mode
+  variables), so "never fired during boot→title" says nothing about
+  gameplay — a negative there needs an in-gameplay save state.
 - **The emulator host is ephemeral.** A tool-server update or restart wipes
   the loaded ROM, save states in memory slots, cheats, and breakpoints —
   check `catalog(op='status')` and re-`loadMedia` before trusting any
@@ -155,6 +159,24 @@ breakpoints are volatile: re-apply after `state(op='load')` or a reset.
 - Tick the `TODO.md` item (add follow-up items you uncovered — unexplained
   branches, suspicious tables). Note surprising dead-ends too: knowing that
   "$037B is a timer, not lives" saves the next session from re-deriving it.
+
+### Recovering misdecoded regions (65816 width desyncs and kin)
+
+Auto-disassembly sometimes decodes a region under the wrong assumptions
+(classic case: 65816 `.a8/.i8` vs `.a16/.i16` — a desynced 16-bit immediate
+swallows the next byte, which then decodes as a stray `brk`/`rti`). When
+rewriting such a region as real instructions:
+
+- **The printed byte columns are ground truth.** Most generated sources
+  carry the original bytes in each line's comment (`; 92E0 E0 00 14`).
+  Hand-decode from those bytes under the corrected assumption — don't trust
+  the mnemonics, and don't need a second disassembler pass.
+- **Demand zero remainder.** The corrected decode must consume *exactly*
+  the same bytes, with every branch target landing on an instruction
+  boundary. A leftover or straddled byte means the assumption is still
+  wrong somewhere.
+- The byte-exact rebuild then proves the edit emitted identical bytes —
+  it's the same free-transformation rule as labels and comments.
 
 ### When a trace looks dead
 
