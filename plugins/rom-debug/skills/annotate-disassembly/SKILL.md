@@ -165,6 +165,15 @@ breakpoints are volatile: re-apply after `state(op='load')` or a reset.
 - Tick the `TODO.md` item (add follow-up items you uncovered — unexplained
   branches, suspicious tables). Note surprising dead-ends too: knowing that
   "$037B is a timer, not lives" saves the next session from re-deriving it.
+- **Stopping mid-increment (context running out, user interrupt):** if the
+  working tree holds an edit that doesn't yet rebuild, do NOT commit
+  anything — instead write a prominent IN-FLIGHT section at the top of
+  `TODO.md`: exactly what was changed, why it doesn't assemble yet (the
+  specific errors/collisions), the finish steps, and the revert path.
+  The next session's "unmodified checkout rebuilds identical" check will
+  fail on a dirty tree; the note is what tells that session whether to
+  finish the edit or `git checkout` it, instead of misreading the
+  mismatch as corruption.
 
 ### Recovering misdecoded regions (65816 width desyncs and kin)
 
