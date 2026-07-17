@@ -118,6 +118,17 @@ touches it partially legible — the RAM map is the program's variable names.
   `breakpoint(on='pc')` and see what the stack/registers say at entry,
   or `disasm(target='pointerTable')` on a suspected table (`reverseHandler`
   answers "which state index lands here?").
+- **Mine the call sites of anything you just named.** A raw byte-scan of the
+  ROM for the call instruction (`jsr $873C` = `20 3C 87`) beats the desynced
+  source text, and the few bytes *preceding* each site are the argument
+  setup — they tell you where the parameter comes from with no further
+  tracing. Constants (`lda #$0100`) enumerate the routine's fixed uses; an
+  indexed load (`lda $2E,x`) names a struct field (that one scan turned
+  "+$2E meaning unknown" into "per-enemy score value"). The site *count* is
+  a signal too: a 3-line helper with 100+ callers is an engine primitive
+  worth naming before anything else, and 0 callers on a routine that
+  plainly does something means a dispatch mechanism you haven't found yet —
+  both facts belong in the annotation.
 - **Read the hit, not the aftermath:** a `breakpoint` hit returns
   `registersAtHit` (the register file at the break instant — a follow-up
   `cpu(op='read')` gives end-of-frame state instead) and takes
@@ -230,6 +241,17 @@ rewriting such a region as real instructions:
   the same bytes, with every branch target landing on an instruction
   boundary. A leftover or straddled byte means the assumption is still
   wrong somewhere.
+- **Not every stray `brk` is a desync artifact.** The usual heuristic — a
+  `brk`/`rti` right after an immediate is a swallowed operand byte — has a
+  real exception: engines that use the BRK (or COP) vector as a software
+  interrupt. If the vector's handler *stores A somewhere and returns*
+  (`php / sta $xx / plp / rti`), then `lda #$0D` + `brk #$00` in genuinely
+  8-bit code is a deliberate 2-byte syscall (opcode + signature byte) —
+  in one SNES engine it was the sound-effect request convention, sitting
+  on hot gameplay paths. Check the vector handler once, early: it decides
+  whether paired `00` bytes in that ROM are decode errors or an API. The
+  zero-remainder rule still adjudicates — a real syscall decodes cleanly
+  in place; a swallowed byte doesn't.
 - The byte-exact rebuild then proves the edit emitted identical bytes —
   it's the same free-transformation rule as labels and comments.
 
