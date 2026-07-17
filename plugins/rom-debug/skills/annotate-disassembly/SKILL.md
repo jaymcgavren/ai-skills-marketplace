@@ -69,6 +69,13 @@ Batch questions into short, focused sessions with a stated purpose — not
 open-ended "play for a while". When asking them to record moments, capture
 several in one sitting (each `state(op='save', path=...)` is instant).
 
+Expect "don't know" answers — even owners of the game recall less than you
+hope. A negative answer is still a finding: record it in `TODO.md` ("human
+doesn't recall a kill-all item — needs to be SEEN") so no session re-asks,
+and fall back to showing rather than asking: inject the thing (spawn the
+pickup, force the effect) and screenshot it — a human who can't recite an
+item list can instantly name one they're looking at.
+
 **Save-state gotcha (live vs. frozen):** a state captured at a paused or
 transitional moment can have key dispatchers not running — code you're
 watching never executes and everything looks dead. Before trusting a state
