@@ -95,6 +95,12 @@ touches it partially legible — the RAM map is the program's variable names.
 
 ### 3. Let the debugger name the code
 
+- **Read before you instrument.** If the moment of interest is already live
+  (a human just played to it, or a save state restored it), one batched
+  `memory(op='read', offsets=[...])` of the mapped addresses may answer the
+  question outright — occupancy, flags, which slot is the player — with no
+  breakpoint at all. Arm instrumentation only when you need the *writer*,
+  not the value.
 - `watch` (or `breakpoint(on='write'/'read')`) on the anchor address, then
   trigger the behavior — by RAM injection where possible — and the PC that
   trips is your routine. This beats any amount of static reading.
