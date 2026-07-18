@@ -265,6 +265,44 @@ friendlier description happens to be true.
   outside the range, which is immediately obvious once you look. The general
   shape: on a cycle-accurate core, "the CPU read this address" and "the
   program reads this variable" are different claims.
+- **A census that reports `truncated: true` can support a positive but never
+  a negative.** The event log is ring-buffered, so an overflowing run has
+  silently dropped rows — and "no PC outside this cluster appeared" is exactly
+  the conclusion those dropped rows could overturn. Re-verifying a recorded
+  "only these routines touch X" claim, the first run reproduced the original
+  240-frame window, overflowed at ~10,000 events, and was worthless as
+  evidence; the same census over 45 frames came back complete and settled it.
+  When the answer you want is an *absence*, shorten the window (or narrow the
+  range) until the run fits, and say in the annotation that it did. One noisy
+  PC firing thousands of times per second is usually what fills the buffer, and
+  it is rarely the one under investigation.
+- **Compare censuses in matched units — routines, not PCs.** A
+  read-modify-write (`lda $90 / ora #$80 / sta $90`) logs its read and its
+  write as two separate PCs, so a byte touched by five routines can report nine
+  distinct PCs. A re-run that returns "9" against a recorded "exactly 5" looks
+  like a refutation and is not. Before writing up a discrepancy, group the PCs
+  by the routine each falls inside and compare *those*; and when recording a
+  census result, state which unit the number is in, because the next session
+  will re-run it and needs to know what would count as disagreement.
+- **When a whole CLASS of past results is in doubt, characterize the
+  instrument instead of re-running every result.** A tool bug (say, watches
+  that mishandled mirrored addresses) invites re-verifying every conclusion
+  that used it. Cheaper and stronger: construct the case the bug predicts and
+  see whether the current tool exhibits it. Arming a range watch on a RAM
+  mirror (`$1090`) and getting back the identical PCs, identical counts, and
+  addresses normalized to the base (`$90`) proves in one call that the layer
+  resolves aliases — which retires the doubt for every past *and* future
+  result at once. Do this first; then re-run only the handful of conclusions
+  that are genuinely load-bearing.
+- **First, census which of your claims are even in the affected class.** Most
+  "nothing reads/writes X" statements in a mature annotation turn out not to
+  be watchpoint results at all: static `readCart findHex` byte scans and
+  pc-space coverage traces produce the same *phrasing* and share none of the
+  same failure modes (PC-space has no mirroring; a byte scan has no ring
+  buffer). Grepping the claims and sorting them by *how each was obtained*
+  cut one "re-verify the negatives" task from a vague sweep to three specific
+  re-runs. The sort itself belongs in the write-up — it tells the next reader
+  which claims rest on which instrument.
 - **"Never changes" is not "never written."** `watch(on='mem')` reports value
   *changes* between frame samples, so a byte the game rewrites every frame
   with the same value shows `eventCount: 0` — indistinguishable from dead
