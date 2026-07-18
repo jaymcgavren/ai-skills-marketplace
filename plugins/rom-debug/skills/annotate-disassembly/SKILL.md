@@ -275,6 +275,20 @@ is for a name, and say in the annotation why the wrong reading was reachable.
   airtight; the real producers were two arms of a reward dispatcher that spawned
   through a table-driven helper. Immediate scans enumerate *literal* writers,
   nothing more.
+  **When a scan for a known-live address comes back empty everywhere, suspect
+  the addressing mode, not the code.** A buffer the game plainly maintains but
+  that no scan can find is almost never absent — it is being reached through an
+  index whose *base* is a different address, so the operand bytes you searched
+  for never appear. One high-score buffer at `$0182` had zero absolute writers
+  in the entire ROM outside cold-boot init; every access went through
+  `$0181,y` with `y`=1..7 in the compare/copy loop and `$0100,y` in the shared
+  drawer, so no scan for `82 01` could ever hit. The fix is cheap: when the
+  target sits at `base+k`, re-scan for the plausible bases too — the page base
+  (`$0100,y` for anything in page 1), and `addr-1`/`addr-2` for loops that index
+  from 1 rather than 0 — and scan the `,y`/`,x` opcode forms (`B9`/`99`/`BD`/
+  `9D`), not just the absolute ones. A structural blind spot in the search
+  reads exactly like an absent feature, which is why "no writer exists" needs
+  to be the start of a new scan rather than a conclusion.
 - **Before you call a branch dead, breakpoint it.** When the static reading says
   a path is unreachable — a flag nothing ever sets, an arm no caller selects —
   that conclusion is worth about one tool call to falsify, and falsifying it is
@@ -440,6 +454,19 @@ is for a name, and say in the annotation why the wrong reading was reachable.
   routine, and both had already been written into a banner as fact. When you
   transcribe an arithmetic expression into a comment, trace the carry into it
   explicitly, then verify with the falsifying prediction above.
+  The sharp end of this: **a routine whose first `sbc` has no `sec` in front of
+  it does not have one meaning — its meaning is a property of each CALL SITE.**
+  A seven-limb high-score compare (`ldy #$07 / lda $0179,y / sbc $0181,y / dey
+  / bne`) inherits whatever carry the caller left, so at the game-over site,
+  where the carry measured clear (`P=$24` at entry via `registersAtHit`), it
+  computes `score − top − 1` and the gate is *strictly greater* — a score that
+  exactly ties the standing record does not commit. Nail this down with the
+  discriminating pair rather than the flag read alone: equal-vs-plus-one is the
+  exact input where "carry set" and "carry clear" disagree (tie → zero writes,
+  tie+1 → the copy runs), whereas a lopsided win commits under either reading
+  and proves nothing. Then scope the claim to the caller you measured and open
+  a TODO for the others; generalizing one site's carry to the whole routine is
+  precisely the error the missing `sec` sets up.
 - **Check a table's length against the guard that indexes it.** After naming a
   lookup table, take the bound from the code (`cmp #$11 / bcc` admits 0..$10)
   and compare it to the entries you actually delimited. A mismatch is either a
