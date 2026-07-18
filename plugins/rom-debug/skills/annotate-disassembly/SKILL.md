@@ -170,6 +170,23 @@ domains is the encoding — usually a flag bit, a bias, or a prefix — and it i
 the finding. Prefer live-verifying with the values the *game* writes, not the
 values the doc lists.
 
+A fifth, and the one most likely to be in *your own* source rather than
+someone else's: **the name is merely correlated with the byte.** A counter
+named "scroll distance" really did climb steadily as the level scrolled — the
+name predicted the observations, and nothing about watching it disagreed. It
+was still wrong: the byte was an adaptive-difficulty accumulator fed by the
+player's rate of fire, their kills, and the spawn stream, all of which happen
+to increase while scrolling. Monotonic counters are especially prone to this,
+because almost any plausible name fits a value that only goes up. Two cheap
+disambiguators, both static: (1) find the byte the name would *really* denote
+— if "scroll distance" is already documented elsewhere, that is decisive, and
+here it was `$A2/$A3`, incremented at two sites that touch nothing in this
+chain; (2) enumerate the writers and ask whether *their* trigger conditions
+match the name — a "distance" byte fed from the gun-fire routine is not a
+distance byte. Correlation makes a wrong name survive years of casual
+confirmation, so treat "the values look right" as the weakest evidence there
+is for a name, and say in the annotation why the wrong reading was reachable.
+
 ### 3. Let the debugger name the code
 
 - **Read before you instrument.** If the moment of interest is already live
@@ -328,6 +345,13 @@ values the doc lists.
   long the pause lasts" and hitting it is far better evidence than observing
   that the byte "changed after unpausing", because a coincidence can produce
   the second and only the real mechanism produces the first.
+  Where you can, choose the check that **falsifies the incumbent** rather than
+  merely fitting your challenger. Correcting a bonus formula from `$25 - 4x`
+  to `36 - 4x`, the observed values were 12, 12, 28, 36 — all members of the
+  new series, but crucially *none* of them a member of the old one (37, 33,
+  29, …). Confirming four values that both formulas predict would have proved
+  nothing. When two readings differ, find the input where they *disagree* and
+  test there.
   The strongest and cheapest form is predicting a whole **output buffer**.
   Drawing/formatting routines (HUD, sprite emitters, tilemap builders) write a
   bounded, readable region, so hand-simulate the routine over the live input
@@ -339,6 +363,42 @@ values the doc lists.
   the prediction so a near-miss is visible: include the values a
   wrong-but-similar decode would get *differently*, not just the ones any
   decode would get right.
+- **Log the WRITES with their values, not the end state, when several things
+  feed one variable.** The instinct for "does firing raise this byte?" is an
+  A/B: run N frames holding the button, run N frames idle, diff the byte. That
+  fails as soon as the variable has more than one contributor — the two arms
+  also differed in how many enemies died, and each death fed the same
+  accumulator, so the end-state delta was uninterpretable and the arithmetic
+  came out non-integral. Switching to `watch(on='range', kind='write',
+  dedupe=true)` over the whole cluster fixed it completely: the result is an
+  ordered list of `(pc, address, value)`, so the **delta between consecutive
+  writes at the same PC** is one isolated arithmetic claim you can check
+  against the opcodes. Every confounder becomes its own labeled row instead of
+  noise — `+2` at the fire site, `+$10` at the kill site, `+4` at the spawn
+  site, all in one 300-frame run, each exactly matching the static decode.
+  A/B diffing answers "does X matter"; a write census answers "what exactly
+  does each contributor add", which is the thing you actually want to write
+  down. Reach for it whenever a byte has several writers.
+- **Read the carry, not just the opcode — a branch sets it.** The most common
+  way an otherwise-correct comment goes off by one on 6502: `sbc`/`adc`
+  reached *through* a conditional branch inherits the carry the `cmp` left.
+  `cmp #$12 / bcc L / … / L: sbc #$01` subtracts **2**, because taking `bcc`
+  means carry is clear. Likewise `eor #$FF / clc / adc #$25` is `$24 - x`, not
+  `$25 - x` — negating with `eor` needs a `sec` to complete the two's
+  complement, and its absence is easy to read past. Both traps appeared in one
+  routine, and both had already been written into a banner as fact. When you
+  transcribe an arithmetic expression into a comment, trace the carry into it
+  explicitly, then verify with the falsifying prediction above.
+- **Check a table's length against the guard that indexes it.** After naming a
+  lookup table, take the bound from the code (`cmp #$11 / bcc` admits 0..$10)
+  and compare it to the entries you actually delimited. A mismatch is either a
+  miscounted table or a genuine overrun — and the overrun is worth annotating,
+  because the bytes past the end are usually the *next routine's opcodes* read
+  as data, giving wildly out-of-range values in a rare edge case. One table
+  ended at `$8EA0` while its guard reached `$8EA2`, so two indices returned
+  `A5 33` — the `lda $33` that opens the following routine — as a "bonus" ~10x
+  the intended maximum. Say plainly whether you exercised it live; these edge
+  indices are usually hard to reach on purpose.
 - `disasm(target='cfg')` and `disasm(target='decompile')` to understand the
   routine's shape once you've pinned it. Decompiled pseudocode is for *your*
   comprehension — comments go on the asm.
