@@ -802,6 +802,41 @@ rewriting such a region as real instructions:
   entry, overlapping the preceding instruction's operand bytes or the
   previous table's tail — chains of these are common in tight engines. One
   equate per base, `.byte` rows only for the real entries.
+- **A fresh disassembler pass is a weak second opinion — check the version
+  before spending the increment on it.** "Our `src/` came from a much older
+  tool, so re-running the disassembler into a scratch dir will grade every
+  region for free" is an appealing plan that can evaporate in one line of
+  output: both runs reported the same `da65 V2.19`, so two of four real banks
+  came out with *byte-for-byte identical* code/data decisions and the other
+  two disagreed only where the annotated source had been hand-repaired. Read
+  the version banner of both listings first; if they match, the exercise
+  measures your own past repairs, not the disassembler.
+  When you do run the comparison, key it on **address**, not line number:
+  generated listings carry `; ADDR bytes` on every line, so extracting
+  `(address, code|data)` pairs from each and joining them survives all the
+  label renames and inserted commentary that make a plain `diff` useless.
+  And expect the disagreements to run in **both** directions, only one of
+  which is the tool being smarter:
+  - *Fresh says code, source says data* — usually the tool decoding a real
+    table as garbage (`rts`/`cli`/`sed`/runs of `php`). Nonsense mnemonics
+    clustered in a region you have live evidence is a table is the tool
+    losing, not finding something.
+  - *Fresh says data, source says code* — usually the **operand-alias**
+    idiom: a label lands mid-instruction (a table reads the operand byte of
+    a live instruction), so the disassembler shreds a genuine instruction
+    into `.byte`s and re-syncs at the label. If you have ever watched that
+    address execute, the annotated source is right.
+  Classify every disagreement into one of those two before concluding
+  anything, and normalize `.word` against `.byte` first — otherwise a pointer
+  table both runs agree is data shows up as a phantom conflict.
+- **Beware a readability metric that scores padding as perfect.** An
+  all-`$00` bank disassembles as thousands of `brk` instructions, which a
+  naive instruction-vs-data ratio reports as "readable 100%" — the highest
+  possible score for a region containing nothing at all. On one 128KB ROM,
+  four banks carrying that header were 64KB of pure `$00` padding, i.e. half
+  the cartridge. Confirm with a direct byte count against the ROM rather than
+  the listing, and fix the header so no future session goes looking for the
+  code that isn't there.
 - The byte-exact rebuild then proves the edit emitted identical bytes —
   it's the same free-transformation rule as labels and comments.
 
