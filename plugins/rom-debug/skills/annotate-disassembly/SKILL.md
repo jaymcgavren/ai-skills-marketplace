@@ -251,6 +251,13 @@ the poke failed.
   "inferred from callers, unverified" tells the next session what still
   needs proof. Never state a guess as fact — a wrong comment poisons every
   later reading of that code.
+- **Transcribe conditions from the instructions, not from your notes.** When
+  a comment describes a branch ("suppresses X while Y"), re-derive the
+  polarity from the opcodes in front of you at write time. Session notes and
+  compaction summaries paraphrase, and a paraphrase can silently invert a
+  condition — one "suppresses spawning while the boss is locked" note was
+  exactly backwards (the gate fired when the boss-locked bit was *clear*);
+  reading the `beq` again while writing the comment is what caught it.
 - Add every new address to `RAM_MAP.md` with its meaning and how it was
   verified.
 
