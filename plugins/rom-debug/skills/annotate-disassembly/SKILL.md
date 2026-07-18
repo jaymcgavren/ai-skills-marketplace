@@ -42,6 +42,14 @@ preference:
   `input(op='set')` for short, targeted advances — seconds, not minutes.
 - **`runUntil` / breakpoints** to fast-forward to a condition instead of
   watching frames go by.
+- **Drive with one long breakpoint run** when the moment is far away but
+  reaching it takes no skill: neutralize the failure modes with cheats
+  first (invincibility, infinite lives — read back to confirm they took),
+  hold the one useful input via `input(op='set')` (e.g. autofire), and arm
+  `breakpoint(on='pc', address=<the event's handler>, maxFrames=100000)`.
+  That is ONE tool call, not gameplay — a 16k-frame drive through two boss
+  fights this way cost the same as any other breakpoint. "Playing" is only
+  expensive when it's screenshot-act-screenshot.
 - **Ask the human to play** (below) when reaching the moment takes skill or
   more than ~30 seconds of play.
 
@@ -53,7 +61,13 @@ them what to do in it — when you need:
 
 - **Reaching a moment**: "Play to the first boss and pause; I'll save-state
   it." One human minute replaces thousands of drive-the-game tokens. Bank
-  every such moment as a `.state` file so no one plays it twice.
+  every such moment as a `.state` file so no one plays it twice. But first
+  check whether the moment is *script-triggered*: scrollers and stage-based
+  games pace their events (bosses, area transitions) by scripted distance
+  or time, and once the level script is decoded (see step 3) the "moment"
+  is a known trigger value you can breakpoint your way to — one "needs a
+  human" capture task fell exactly this way, the script naming the precise
+  distance of the area-end event.
 - **Naming things**: you can see a sprite's bytes but not what the manual
   calls it. Show a screenshot, ask "what is this enemy/item called?" Use the
   game's real terminology in comments — future readers (and the user) search
@@ -157,7 +171,22 @@ right). Record the resolution either way so no session re-litigates it.
   `captureMemory:[…]` to read RAM at the hit in the same call. One breakpoint
   call with both replaces a break + two reads. `pressDuring` schedules input
   during the wait ("hold Start at frame 60") so driving the game to the
-  trigger and watching for it is also one call.
+  trigger and watching for it is also one call. Timing caveat (observed on
+  fceumm): the captured RAM can still hold PRE-handler values — treat
+  `captureMemory` as trigger-time context, and verify the handler's *side
+  effects* by stepping a frame and re-reading.
+- **Decode interpreters, then verify by prediction.** Script/bytecode
+  interpreters (level scripts, spawn choreography, cutscene players) are
+  the densest annotation wins: one grammar explains a whole data bank. Once
+  the dispatch is understood, write a small decoder for the format and
+  commit it to the project (`tools/`) — the decoded timeline is
+  documentation in itself (where every boss/event sits) and later sessions
+  decode sibling scripts for free. Then verify by *prediction*: from the
+  cart bytes, predict which handler fires next and at what trigger value,
+  and arm a pc-breakpoint on the predicted handler. A hit at exactly the
+  predicted trigger — with the dispatcher's register signature at entry —
+  proves the grammar, the dispatch decode, and the pointer seeding in one
+  shot; far stronger evidence than watching writes after the fact.
 - `disasm(target='cfg')` and `disasm(target='decompile')` to understand the
   routine's shape once you've pinned it. Decompiled pseudocode is for *your*
   comprehension — comments go on the asm.
@@ -287,6 +316,15 @@ rewriting such a region as real instructions:
   (overlapping code/data reads are common in tight NES engines), don't try
   to place a label mid-row: define the reference as an equate
   (`L973A := $973A`) and keep the emitted byte stream label-free.
+- **RTS-trick inline dispatch tables** (the bytes right after a
+  `jsr Dispatcher` that are really pointer entries stored as handler-1)
+  resplit as `.word Cmd0Handler-1, Cmd1Handler-1, …` — the `-1` expressions
+  assemble to identical bytes while giving every handler a real, greppable
+  label. Related pattern: per-id tables indexed from a nonzero first id
+  (ids 2..N) often place their *base* first-id bytes before the first real
+  entry, overlapping the preceding instruction's operand bytes or the
+  previous table's tail — chains of these are common in tight engines. One
+  equate per base, `.byte` rows only for the real entries.
 - The byte-exact rebuild then proves the edit emitted identical bytes —
   it's the same free-transformation rule as labels and comments.
 
