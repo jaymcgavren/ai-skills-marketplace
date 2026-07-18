@@ -47,6 +47,13 @@ preference:
 - **Inject the state** you need: write the RAM that makes the event true
   (grant the pickup, set the HP, spawn the object) and watch what the code
   does with it. This is faster AND more precise than causing it organically.
+  In an entity-table game this is how you summon an object that play cannot
+  reach: scan the object table for a slot whose state byte is 0, write the
+  state you want plus a position, and the dispatcher does the rest — the
+  actor's own init path runs and builds every other field. That is strictly
+  better than poking the *effect* you expect, because the code under test is
+  the code that constructs the object. One item existed only as a 1-in-64
+  drop; three bytes put it on screen.
 - **Frame-step** (`frame(op='step', frames=N)`) with inputs held via
   `input(op='set')` for short, targeted advances — seconds, not minutes.
 - **`runUntil` / breakpoints** to fast-forward to a condition instead of
@@ -260,6 +267,28 @@ is for a name, and say in the annotation why the wrong reading was reachable.
   only *direct* stores: indexed (`sta $80,x`) or indirect writes need the
   dynamic census too, so treat a clean scan as an upper bound on direct
   writers, not proof no other path exists.
+- **A byte a routine only READS is a PARAMETER — go find who set it.** The
+  fastest way into an actor whose branches make no sense is to notice which
+  bytes it consumes without ever writing, and scan for the store. One handler
+  branched its entire behaviour on a zero-page byte with no writer anywhere in
+  its bank; the sole `sty` was in the shared collision responder, stashing the
+  slot index of the *other* object in the pair. That one byte was the whole
+  semantics: zero meant "the player touched me", nonzero meant "a player shot
+  hit me", and the two arms of the branch were the item's two entirely
+  different rewards. Callers communicate through globals in 8-bit code —
+  treat an unwritten read as a named argument, not as ambient state, and the
+  routine's signature falls out before you trace anything.
+- **When a live drive stalls, poke the PENULTIMATE state, not the outcome.**
+  Exercising a mechanism organically often gets you most of the way and then
+  breaks down (the player died, the object drifted out of range, the setup
+  decayed). The temptation is to jump to the end and write the final values
+  yourself — but then the transition you care about never executed and you
+  have verified nothing. Instead set the state to one step short and let the
+  real mechanism take the last step. A six-hit charge counter that real shots
+  had walked 6→4 before the run fell apart was set to 1, and one more *real*
+  shot drove it to 0 — so the zero-crossing side effects (velocity zeroed,
+  palette flipped) were genuinely produced by the code under test. You keep
+  the evidence and skip the grind.
 - **Tables and packed records: make the DATA prove its own layout.** A pointer
   table plus variable-length records is the most common data shape in a ROM,
   and it is unusually self-checking — you rarely need a breakpoint to nail it.
