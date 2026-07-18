@@ -100,6 +100,15 @@ skill's search loop (`memory(op='search')` → change it → `searchNext`) or
 new `RAM_MAP.md` row, and each mapped address makes every routine that
 touches it partially legible — the RAM map is the program's variable names.
 
+Community documentation (Data Crystal, TCRF, fan wikis) is a rich anchor
+source — but import it as *hypotheses*, one TODO item per claim, and verify
+each live before adopting it into `RAM_MAP.md`. Conflicts between your map
+and theirs are high-value targets, not annoyances: resolving one either
+catches your own error early (one session's "weapon power" byte turned out
+to be ship tilt — the community map was right) or uncovers a subtlety (one
+"conflict" was two independent bits of the same byte; both sources were
+right). Record the resolution either way so no session re-litigates it.
+
 ### 3. Let the debugger name the code
 
 - **Read before you instrument.** If the moment of interest is already live
@@ -111,6 +120,19 @@ touches it partially legible — the RAM map is the program's variable names.
 - `watch` (or `breakpoint(on='write'/'read')`) on the anchor address, then
   trigger the behavior — by RAM injection where possible — and the PC that
   trips is your routine. This beats any amount of static reading.
+- **Census a region in one pass.** `watch(on='range', distinctPCsOnly=true)`
+  over a cluster of related unknowns returns every distinct PC that reads or
+  writes the span in a single run — arm it once over live gameplay instead
+  of guessing which single-address breakpoint to try first. But treat the
+  PCs attached to a *value timeline* (`watch(on='mem')`) as approximate:
+  cores may report the PC at the frame-boundary sample point, not the store
+  instruction, and that PC can be pure fiction. Confirm a suspected writer
+  with an exact write breakpoint, or statically — byte-scan the ROM for the
+  store opcode (`sta $A4` = `85 A4` via `memory(op='readCart', findHex=…)`).
+  Byte-scan hits need their own check: the same two bytes can straddle an
+  instruction boundary (a `jsr` operand followed by the next opcode), so
+  confirm each hit decodes as an instruction *at that address* before
+  believing it.
 - `disasm(target='references', address=...)` / `disasm(target='xrefs')` for
   who calls it. **Limitation:** static reference scans miss indirect and
   jump-table dispatch — common in NES engines (object-state dispatchers). If
@@ -185,6 +207,12 @@ Two poke outcomes that LOOK like "wrong address" but aren't:
   watchpoint hops, and the "variable" turned out to be a pure function of
   map state.)
 
+When the verification is visual — reading a score or counter off a
+screenshot — crop and scale the region first (`frame(op='screenshot')`
+takes both). Native-resolution console fonts misread easily; a "wrong"
+digit may be your eyes, not the poke, so re-read the RAM before concluding
+the poke failed.
+
 ### 4. Write the annotation
 
 - Rename auto-labels (`L8F78` → `PlayerDeathHandler`) at the definition and
@@ -252,6 +280,13 @@ rewriting such a region as real instructions:
   whether paired `00` bytes in that ROM are decode errors or an API. The
   zero-remainder rule still adjudicates — a real syscall decodes cleanly
   in place; a swallowed byte doesn't.
+- **Plain data-as-code is the same job without the width games.** On 6502,
+  a parameter table decoded as `ora`/`sed` garbage becomes `.byte` rows once
+  you know what it holds — same zero-remainder rule, same cmp gate. When
+  another instruction references an address *inside* the re-decoded bytes
+  (overlapping code/data reads are common in tight NES engines), don't try
+  to place a label mid-row: define the reference as an equate
+  (`L973A := $973A`) and keep the emitted byte stream label-free.
 - The byte-exact rebuild then proves the edit emitted identical bytes —
   it's the same free-transformation rule as labels and comments.
 
