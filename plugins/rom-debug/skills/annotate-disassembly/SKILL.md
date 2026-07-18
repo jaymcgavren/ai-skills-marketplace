@@ -267,6 +267,28 @@ is for a name, and say in the annotation why the wrong reading was reachable.
   only *direct* stores: indexed (`sta $80,x`) or indirect writes need the
   dynamic census too, so treat a clean scan as an upper bound on direct
   writers, not proof no other path exists.
+  The same limit bites harder on a *value* scan. Hunting the producers of a
+  particular value (`lda #$53` = `A9 53`) only finds the sites that name it as
+  an immediate — and engines routinely write the same field from a table
+  (`lda tbl,y; sta state,x`), which the scan cannot see. One such scan returned
+  exactly one spawner for an object type and made a dead-code conclusion look
+  airtight; the real producers were two arms of a reward dispatcher that spawned
+  through a table-driven helper. Immediate scans enumerate *literal* writers,
+  nothing more.
+- **Before you call a branch dead, breakpoint it.** When the static reading says
+  a path is unreachable — a flag nothing ever sets, an arm no caller selects —
+  that conclusion is worth about one tool call to falsify, and falsifying it is
+  much cheaper than defending it. Arm `breakpoint(on='pc')` on the supposedly
+  dead arm and drive hard for tens of thousands of frames (cheats on, one input
+  held); a hit ends the argument instantly. If it hits, the follow-up is
+  mechanical and deterministic: note the slot/index from `registersAtHit`, then
+  re-run the *identical* drive with an exact write-watchpoint on the byte that
+  arm read, and the writer's PC comes back with a call stack. Three calls took
+  "probably dead code" to a named producer, and the answer inverted the
+  guess — the "unreachable" variant was the common one and the documented
+  path was the special case. Absence over a long drive is only evidence, but
+  presence is proof, and you are far more likely to be wrong in the direction
+  that a breakpoint catches.
 - **A byte a routine only READS is a PARAMETER — go find who set it.** The
   fastest way into an actor whose branches make no sense is to notice which
   bytes it consumes without ever writing, and scan for the store. One handler
@@ -588,6 +610,19 @@ the poke failed.
   reading the `beq` again while writing the comment is what caught it.
 - Add every new address to `RAM_MAP.md` with its meaning and how it was
   verified.
+- **Speculation goes in `TODO.md`, never in the annotation — and write it as a
+  question someone can attack.** Increments end with loose ends: a flag whose
+  setter you didn't find, a variant you couldn't produce. The pressure is to
+  round it off in the comment ("presumably unused") because that reads as
+  finished. Don't — the comment is the artifact everyone trusts, and a
+  plausible guess there is indistinguishable from a verified claim six months
+  later. Put it in `TODO.md` *with the evidence you already have*: the exact
+  addresses that read the byte, the scan you ran, what would settle it. That
+  costs one paragraph and it is the highest-yield item in the backlog, because
+  the next session starts with the search already narrowed. A "find the setter
+  or prove nothing sets it" note written this way was picked up as the very
+  next increment and solved in a handful of calls — and the guess it had
+  declined to write into the source turned out to be wrong.
 
 ### 5. Verify and persist
 
