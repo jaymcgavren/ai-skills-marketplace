@@ -399,6 +399,28 @@ values the doc lists.
   routine that never fires in some mode is itself a finding worth
   annotating: it scopes every conclusion built on that routine to the modes
   where it runs.
+  Two things make the difference between a negative that's evidence and one
+  that's just a silent tool:
+  - **Arm a POSITIVE CONTROL before believing any never-fired result.** The
+    same breakpoint mechanism, on an address in the same routine you're
+    confident *does* execute, must demonstrably hit. Without it, "never
+    fired" is equally consistent with a bad address, a mis-set breakpoint,
+    an instruction boundary you got wrong, or the subsystem never running at
+    all. One decompressor escape-path negative (~146,000 frames, zero hits)
+    only became publishable because a control on the header-parse store hit
+    at frame 9 — proving the address was a real instruction boundary, the
+    breakpoint worked, and the decompressor was running the whole time. Cite
+    the control in the annotation alongside the negative; a later reader
+    needs it as much as you did.
+  - **Verify the run went where you claim it went.** The scope clause
+    ("areas 1-6") is a factual assertion about a run you didn't watch, so
+    read it back out of RAM (mode/area/lives bytes) or screenshot at the
+    end — don't infer it from the inputs you scheduled. Beware the PC
+    histogram as a progress signal: two runs of very different length can
+    return identical histograms because the idle loop dominates the
+    sampling, which reads as "the game never advanced" when it advanced
+    fine. A negative over a window that never left the title screen is
+    worth nothing, and nothing about the returned data will tell you.
 - **The emulator host is ephemeral.** A tool-server update or restart wipes
   the loaded ROM, save states in memory slots, cheats, and breakpoints —
   check `catalog(op='status')` and re-`loadMedia` before trusting any
