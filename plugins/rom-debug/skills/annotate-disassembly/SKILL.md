@@ -206,6 +206,24 @@ distance byte. Correlation makes a wrong name survive years of casual
 confirmation, so treat "the values look right" as the weakest evidence there
 is for a name, and say in the annotation why the wrong reading was reachable.
 
+A sixth is the mirror image of the fourth: **two readings of a consumer that
+agree on every value the producers actually write.** A palette-upload request
+byte was documented as "request *flags*", and the producers really do build it
+bit-wise. But the consumer compares it (`cmp #$02` / `cmp #$03`), so `$01` and
+`$05` and `$FF` all land in the same arm, which no bitmask reading predicts.
+Since the game only ever writes 1/2/3 — where masking and comparing agree —
+no amount of watching the game play can tell the two apart, and describing it
+as flags invites a future reader to "add a bit" that silently selects a
+different arm. **When a decode has a plausible alternative reading, work out
+where the two disagree, and check whether the game ever goes there. If it
+doesn't, the discriminating test needs a value the game never writes** — poke
+one in (here `$06`: bitmask says sprite half, `cmp` says map half) and watch
+which arm runs. This is one of the few cases where an out-of-domain input is
+the *right* experiment rather than a meaningless one, because the question is
+what the code says, not what the game does. Then annotate both: the actual
+decode, and the fact that the producers stay inside the region where the
+friendlier description happens to be true.
+
 ### 3. Let the debugger name the code
 
 - **Read before you instrument.** If the moment of interest is already live
