@@ -29,6 +29,15 @@ so any later mismatch is attributable to this session's edits. Experimental
 *behavioral* edits (testing a hypothesis by patching code) go in the
 git-ignored `hack-src/` copy, never in canonical `src/`.
 
+"Comments can't change bytes" is true of the *intent*, not of the *edit
+mechanism*. The common way to break it: a find-and-replace edit whose old and
+new text overlap on an instruction line, silently duplicating or dropping that
+instruction — which surfaces as a bank overflowing by a few bytes, not as
+anything that looks comment-related. When an annotation-only pass fails to
+link, diff the file and read the non-comment `+`/`-` lines first
+(`git diff -U0 <file> | grep '^[+-]' | grep -v '^[+-]\s*;'`); the culprit is
+almost always one duplicated opcode line, not a real assembler problem.
+
 **2. Don't play the game.** Extended agent-driven gameplay burns enormous
 token volume for nothing — every frame you drive is screenshots and input
 calls that a save state or a RAM poke replaces. The substitutes, in order of
@@ -105,6 +114,17 @@ One concrete behavior from `TODO.md` (or the user's ask): "what decrements
 lives", "how do pickups grant weapons", "what does the routine at $B268 do".
 Small targets close; vague ones ("understand bank 3") don't.
 
+**Treat the task's own wording as a hypothesis, not a brief.** A TODO item
+written by an earlier session usually carries a parenthetical guess at what
+each address does ("`$853B` (per-frame reset), `$852A` (OAM clear)"), planted
+before anyone read the code. Those guesses are exactly the kind of claim this
+loop exists to test — and two of that pair were wrong ($853B draws the score
+HUD; $852A clears eight attribute bytes, not OAM). If you adopt the phrasing
+into the label or banner you will have laundered a guess into documentation
+that reads as verified. Derive each one fresh, and when the task's description
+turns out wrong, say so explicitly when ticking it off: the correction is
+often the most valuable thing the increment produced.
+
 ### 2. Get an anchor address
 
 Behaviors are found through the RAM they touch. If the relevant address is
@@ -122,6 +142,33 @@ catches your own error early (one session's "weapon power" byte turned out
 to be ship tilt — the community map was right) or uncovers a subtlety (one
 "conflict" was two independent bits of the same byte; both sources were
 right). Record the resolution either way so no session re-litigates it.
+
+A third resolution is worth expecting: **the claim is true in a mode you
+weren't observing.** RAM is reused across modes, and a byte can be inert
+during gameplay while genuinely behaving as described somewhere else. One
+"frame counter advanced by the main loop" turned out to be a sprite-allocator
+flag byte that is constant during play — but which a pause loop increments
+once per frame, exactly matching the published description. Whoever wrote it
+had probably watched the byte with the game paused. So when a claim and your
+census disagree, don't stop at "they're wrong": ask *in which mode would this
+be right*, and check that mode before writing the refutation. The annotation
+is much stronger when it explains why the wrong reading was reachable, and
+that explanation is often itself the interesting behavior.
+
+A fourth resolution is the sneakiest, because the claim looks *verified* when
+it isn't: **the published values describe the table the byte indexes, not the
+values the byte holds.** One map documented a HUD selector as "0=illegal,
+1=AREA, 2=TIME"; the row list was exactly right, but no code in the game ever
+writes 1 or 2 there — every writer adds 6, because the high half of the range
+encodes "erase the current graphic first, then show row (value − 6)". Poking
+the documented values *does* produce the documented banners, so a quick
+confirmation pass ratifies a map that would mislead every future reader of the
+writers. The tell is a census mismatch: enumerate the byte's **writers** (a
+`85 xx`/`84 xx` scan is enough) and check that the values they actually store
+fall inside the documented domain. When they don't, the gap between the two
+domains is the encoding — usually a flag bit, a bias, or a prefix — and it is
+the finding. Prefer live-verifying with the values the *game* writes, not the
+values the doc lists.
 
 ### 3. Let the debugger name the code
 
@@ -147,6 +194,23 @@ right). Record the resolution either way so no session re-litigates it.
   instruction boundary (a `jsr` operand followed by the next opcode), so
   confirm each hit decodes as an instruction *at that address* before
   believing it.
+- **"Never changes" is not "never written."** `watch(on='mem')` reports value
+  *changes* between frame samples, so a byte the game rewrites every frame
+  with the same value shows `eventCount: 0` — indistinguishable from dead
+  RAM. One byte watched this way looked completely inert across 240 frames;
+  a `watch(on='range', kind='write', dedupe=true)` over the same single
+  address showed it being stored three times per frame, and the *identity* of
+  the storing PC (masking off two flag bits) was the whole finding. Use the
+  range form with `dedupe` when the question is "who writes this and with
+  what value"; the `(pc, value)` rows it returns are the real answer. Reserve
+  `on='mem'` for "how does this value evolve over time".
+- **A/B a mode/flag bit by poking it and re-running the census.** When a byte
+  looks like a mode selector, clear or set the suspected bit and repeat the
+  same write census: the *set of PCs that fire* changes, and that difference
+  is a causal demonstration rather than an inference from reading branches.
+  (Clearing one bit made a per-frame toggle instruction start firing that had
+  been silent for 240 frames, and brought a second code path to life with
+  it.) Cheap, fast, and it survives being wrong about the surrounding logic.
 - `disasm(target='references', address=...)` / `disasm(target='xrefs')` for
   who calls it. **Limitation:** static reference scans miss indirect and
   jump-table dispatch — common in NES engines (object-state dispatchers). If
@@ -165,6 +229,47 @@ right). Record the resolution either way so no session re-litigates it.
   worth naming before anything else, and 0 callers on a routine that
   plainly does something means a dispatch mechanism you haven't found yet —
   both facts belong in the annotation.
+- **Bound a byte's writers exhaustively with a store scan.** For a zero-page
+  address the store is two bytes (`sta $83` = `85 83`), so one
+  `memory(op='readCart', findHex=…)` enumerates *every* direct writer in the
+  ROM — usually a handful. That converts vague claims into bounded ones: read
+  the masking instruction at each site and you can say which bits any code is
+  even *capable* of changing. In one case seven stores existed, six touched
+  only bits 0/1/7, and the lone remaining site (an `eor` on a pause-exit path)
+  was therefore provably the only thing in the game that could set the bit in
+  question — a conclusion no amount of live watching would have justified,
+  because the mode simply never changed during ordinary play. Pair it with
+  the same instruction-boundary check as any byte-scan, and remember it finds
+  only *direct* stores: indexed (`sta $80,x`) or indirect writes need the
+  dynamic census too, so treat a clean scan as an upper bound on direct
+  writers, not proof no other path exists.
+- **Shadow variables: prove the mirror is TOTAL, and check it against the
+  hardware.** Engines mirror write-only hardware registers (NES PPUCTRL/PPUMASK,
+  VDP regs, LCDC) in RAM because the register cannot be read back. Three moves
+  turn "this looks like a shadow" into a proof, and the third is usually the
+  real finding:
+  - **Scan for the REGISTER store, not the variable store.** `sta $2001` =
+    `8D 01 20` enumerates every write to the hardware itself; then check each
+    hit pairs with a store to the shadow. When all of them do, the mirror is
+    *total* — nothing bypasses it — which is far stronger than "a shadow
+    exists", and it licenses every later reading that treats the shadow as
+    authoritative. (One NES game: exactly 4 `sta $2001` sites ROM-wide, each
+    storing the same value to `$FE` in the adjacent instruction.)
+  - **Let the core be the oracle.** Emulators expose the real registers
+    (`memory(region='nes_ppu_regs')` and the per-platform equivalents), so a
+    shadow claim is checkable with zero instrumentation: sample the RAM byte
+    and the register at two moments whose values *differ*, and compare. Two
+    matching samples (boot `$06`, title `$1E`) beat any amount of reading the
+    stores — and the second sample should be one your static decode
+    *predicts* (`$06 | $18` after one enable pass), so a near-miss is visible.
+  - **Ask what the shadow is FOR — the readers are the point.** The writes are
+    bookkeeping; the reason the mirror exists is that some code needs to ask
+    "what is the hardware state right now?", which a write-only register can't
+    answer. Those consumers are usually the interesting code: in one case two
+    gates (`lda shadow / and #$18 / bne`) used it to decide whether a scroll
+    update could go straight to the PPU or had to be deferred — i.e. the
+    shadow is a *safety interlock*, not a convenience copy. Chase the readers
+    before you consider the byte documented.
 - **Read the hit, not the aftermath:** a `breakpoint` hit returns
   `registersAtHit` (the register file at the break instant — a follow-up
   `cpu(op='read')` gives end-of-frame state instead) and takes
@@ -187,10 +292,93 @@ right). Record the resolution either way so no session re-litigates it.
   predicted trigger — with the dispatcher's register signature at entry —
   proves the grammar, the dispatch decode, and the pointer seeding in one
   shot; far stronger evidence than watching writes after the fact.
+  Prediction-verification is not just for interpreters. Any time you claim a
+  value is *derived* — "this restores the saved byte with bit2 flipped" —
+  turn it into an exact arithmetic prediction, set up the inputs, and check
+  the byte. Predicting "`$00` in, therefore exactly `$04` out, no matter how
+  long the pause lasts" and hitting it is far better evidence than observing
+  that the byte "changed after unpausing", because a coincidence can produce
+  the second and only the real mechanism produces the first.
+  The strongest and cheapest form is predicting a whole **output buffer**.
+  Drawing/formatting routines (HUD, sprite emitters, tilemap builders) write a
+  bounded, readable region, so hand-simulate the routine over the live input
+  and predict every byte it should have produced — then confirm with ONE
+  `memory(op='read')`, no breakpoint at all. Sixteen bytes of OAM matching a
+  by-hand prediction (positions stepping +9, the suppressed digits blanked,
+  the tiles at 2x their digit value) proves the loop structure, the addressing,
+  the stride, the special cases and the buffer layout simultaneously. Design
+  the prediction so a near-miss is visible: include the values a
+  wrong-but-similar decode would get *differently*, not just the ones any
+  decode would get right.
 - `disasm(target='cfg')` and `disasm(target='decompile')` to understand the
   routine's shape once you've pinned it. Decompiled pseudocode is for *your*
   comprehension — comments go on the asm.
 - `cpu(op='step')` through short stretches when the flow is confusing.
+- **A/B a single flag by poking it, and re-run each arm to prove the
+  difference is the flag.** The strongest way to characterize a mode bit is
+  two runs from ONE save state that differ only in that bit: restore, poke,
+  run N frames, read the same addresses; then restore, don't poke, repeat.
+  Emulators are deterministic, so any difference is caused by the poke — but
+  only if you *demonstrate* the determinism. **Re-run each arm and confirm it
+  reproduces byte-identically before believing the diff**; that one extra
+  call is what separates "this flag changes object positions" from "these two
+  runs happened to differ", and it is cheap.
+  Two traps this pattern walks into:
+  - **Reading the diff at the wrong layer.** A difference in a rendered
+    buffer (OAM, tilemap) can mean the *contents* changed OR that a different
+    *subset* of the same contents got drawn. Those look identical in a hex
+    dump. Diff the underlying game state (the entity table) too — if the
+    state table is byte-identical while the drawn output differs, it's a
+    presentation effect; if the state table itself differs, the flag reaches
+    game logic and that is a much bigger claim.
+  - **Restores that didn't happen.** Confirm the run actually started where
+    you think (see the `fromState` gotcha below).
+- **When two arms diverge, diff ALL of RAM at a fixed frame — don't chase the
+  symptom.** The instinct after seeing "object positions differ" is to
+  watchpoint the position fields and walk upstream through whatever writes
+  them. That is a long walk through hot code, and every step invites a new
+  guess. Instead dump the entire work RAM in both arms at the same frame
+  (`memory(op='read', length=<all>, outputPath=…)` per arm, then `cmp`) and
+  read the divergence set directly. It separates cause from consequence in one
+  call: the causal byte is upstream, and the position fields, their derived
+  collision boxes, and the render buffer are all downstream noise. **One
+  surviving zero-page byte = one hypothesis, already localized.** Bracket
+  first (diff at frame 1, 5, 30) so you know the divergence has actually
+  started but hasn't yet spread; a too-late frame drowns the signal in
+  knock-on differences. Then find the byte's writer with a `E6 xx`/`85 xx`
+  scan — a byte with exactly one writer and one reader is usually the whole
+  answer.
+- **Presentation state can feed back into logic — check before calling a mode
+  bit "cosmetic".** Engines under sprite/tile pressure alternate *which*
+  entities get service, and the cheap way to do that is a counter incremented
+  from a rendering-pressure flag (an allocator's "I ran out" bit, the PPU's
+  sprite-overflow bit) whose low bits then permute the entity **update** order
+  — often through a small table that reverses the pool while pinning the
+  reserved slots. That makes a flicker knob change gameplay: a different
+  update order means different spawn, collision and free-slot outcomes. If a
+  supposedly cosmetic flag perturbs game state, look for exactly this shape
+  before assuming a scratch-variable collision or a dropped tick.
+- **`fromState` is not honored by every trace op — check for the echo.** On
+  romdev, `fromState`/`fromStatePath` are documented on `watch(on='range')`
+  and `watch(on='pc')`; passing them to `watch(on='mem')` is **silently
+  ignored**, and the run starts from wherever the emulator happens to sit,
+  with no error. A trace that silently began from the previous arm's end
+  state will contradict your other measurements and send you hunting a
+  phantom bug in the game. The tell is in the result: a real restore echoes
+  `restoredFrom`. If that field is absent, it didn't restore — do it yourself
+  with an explicit `state(op='load')` first. Generalize the habit: when a
+  tool takes a setup parameter, verify from its OUTPUT that the setup
+  happened, rather than trusting that the parameter was accepted. (Same
+  lesson as the cheat-applied-but-not-poked trap above.)
+- **Eliminating hypotheses is a publishable result.** When a finding is real
+  but the mechanism resists, don't leave the note as "unexplained" — record
+  which explanations you KILLED and how, plus the sharpest mechanical
+  statement you can make ("the object takes one extra fractional movement
+  step; same writer PC, 14 hits vs 15"). A later session that re-derives four
+  dead hypotheses has wasted the session. And if an earlier commit guessed a
+  mechanism that you have now disproven, **correct that comment in the same
+  increment** — a plausible wrong hypothesis sitting in the source is worse
+  than no hypothesis, because it reads as settled.
 - **Prove absence, not just presence.** A PC breakpoint that never fires
   over hundreds of frames spanning several game phases is real evidence — it
   can disprove a plausible hypothesis (e.g. "the IRQ vector drives raster
