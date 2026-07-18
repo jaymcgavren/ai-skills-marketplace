@@ -54,6 +54,18 @@ preference:
   better than poking the *effect* you expect, because the code under test is
   the code that constructs the object. One item existed only as a 1-in-64
   drop; three bytes put it on screen.
+  When the event you need is guarded by a request flag with several **entry
+  flavors**, read the dispatch and pick the flavor with the fewest
+  preconditions — they are rarely equal in cost. Reaching an end-of-area
+  commit looked like it required clearing an area (a boss fight, or a long
+  driven run); the transition handler turned out to have two arms, and the
+  one selected by a different request bit skipped the boss wait entirely.
+  Setting the request byte to *both* bits — the cheap arm plus the flag
+  selecting the branch I wanted at the far end — reached the target routine
+  in ~430 frames from an ordinary mid-level save state. The lesson is to
+  spend a minute in the consumer's branch structure before accepting a
+  precondition at face value: "this needs a boss kill" is a claim about one
+  path through the handler, not about the handler.
 - **Frame-step** (`frame(op='step', frames=N)`) with inputs held via
   `input(op='set')` for short, targeted advances — seconds, not minutes.
 - **`runUntil` / breakpoints** to fast-forward to a condition instead of
@@ -428,6 +440,24 @@ is for a name, and say in the annotation why the wrong reading was reachable.
   the prediction so a near-miss is visible: include the values a
   wrong-but-similar decode would get *differently*, not just the ones any
   decode would get right.
+  **Re-read the discriminating input AT the hit — a poked input can drift
+  before the routine consumes it, and the arm degrades into a
+  non-discriminating one that still "confirms".** When the setup is "poke the
+  inputs, then run N frames until the routine fires", anything the game
+  updates in those N frames is not yours to control. Testing whether a
+  high-score compare accepts an exact tie, I poked score = TOP = 0000500 and
+  ran ~431 frames to the commit; it hit the copy loop, exactly as the
+  hypothesis predicted. It was junk: enemies scored during those frames, the
+  score reached 0000523, and the arm had silently become a plain
+  greater-than test — which *both* candidate readings predict, so it proved
+  nothing. Only the `captureMemory` dump at the breakpoint showed it. Two
+  habits fix this cheaply: capture the input bytes at the hit (not just the
+  output) and confirm they're still the values you set; and when the drift is
+  deterministic — emulators are — run once to *measure* the drifted value,
+  then set the other side of the comparison to that, which reconstructs the
+  exact discriminating input you wanted. The general form: a long run between
+  poke and consumption is an uncontrolled edit to your own experiment, so
+  verify the premise at the moment of use, not at the moment of setup.
 - **Log the WRITES with their values, not the end state, when several things
   feed one variable.** The instinct for "does firing raise this byte?" is an
   A/B: run N frames holding the button, run N frames idle, diff the byte. That
