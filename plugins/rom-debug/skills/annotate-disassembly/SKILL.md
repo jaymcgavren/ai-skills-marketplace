@@ -243,6 +243,35 @@ values the doc lists.
   only *direct* stores: indexed (`sta $80,x`) or indirect writes need the
   dynamic census too, so treat a clean scan as an upper bound on direct
   writers, not proof no other path exists.
+- **Tables and packed records: make the DATA prove its own layout.** A pointer
+  table plus variable-length records is the most common data shape in a ROM,
+  and it is unusually self-checking — you rarely need a breakpoint to nail it.
+  - **Read one entry PAST the table's end.** The next bytes are almost always
+    recognizably something else (the first record's own header, `$FF` padding,
+    the following table). That converts "this looks like 7 entries" into a
+    bounded claim. One 7-entry resource table's 8th word decoded as the first
+    stream's marker header — which *is* the proof it has 7 entries.
+  - **If records are packed back-to-back, require the chain to close.** Walk
+    record *i* by your decode of its format; it must terminate EXACTLY on the
+    address in table entry *i+1*, for every entry, with the last landing on
+    padding. That is an N-way simultaneous check on the grammar, the pointers
+    and the terminator, and a wrong reading of any of the three cannot chain
+    7-for-7 by luck. Cheap, entirely static, and it beats verifying one record
+    dynamically. Then confirm ONE record live (decode it yourself, diff against
+    the buffer the game decompresses it into) and the whole table is settled.
+  - **Parallel tables announce themselves by a constant stride.** When several
+    tables are indexed by the same value they usually sit at a fixed distance
+    apart, so on finding one, probe base ± stride. Two known tables `$53` apart
+    turned out to be four tables of `$53` entries — which promoted "83" from a
+    magic number to a named engine constant (the type count), and tied a type's
+    hitbox to its bullet pattern as one record.
+  - **"Zero referrers" is not "unused", and raw byte scans over-count them.**
+    An absolute-operand scan (`lda TABLE,y`) cannot see anything reached
+    through a pointer table or an indirect, so a live, essential region can
+    score zero. Conversely, scanning raw bytes for pointer-shaped pairs finds
+    heavy false positives, because operand bytes *inside* data read as
+    plausible instructions — compute referrers from decoded instruction
+    boundaries, and discard referrers that themselves sit inside data.
 - **Shadow variables: prove the mirror is TOTAL, and check it against the
   hardware.** Engines mirror write-only hardware registers (NES PPUCTRL/PPUMASK,
   VDP regs, LCDC) in RAM because the register cannot be read back. Three moves
@@ -507,6 +536,21 @@ Auto-disassembly sometimes decodes a region under the wrong assumptions
 swallows the next byte, which then decodes as a stray `brk`/`rti`). When
 rewriting such a region as real instructions:
 
+- **Before repairing, INVENTORY — and sanity-check that your metric measures
+  defects rather than correctness.** Scanning the whole disassembly once to
+  size the problem beats stumbling into regions one at a time. But pick the
+  signal carefully: on one NES project the obvious candidate, the count of
+  `.byte` escapes, ran to 1160 and 2026 lines per bank and measured the exact
+  *opposite* of what it looked like — those bytes are ones the disassembler
+  (or an earlier repair) already classified CORRECTLY as data. The real repair
+  signal was `brk` runs, i.e. `$00` bytes still rendered as instructions. A
+  scan whose "defect count" is really a correctness count will send you to
+  rewrite the healthiest regions in the ROM. Two cheap guards: eyeball a
+  couple of the highest-scoring hits before trusting the ranking, and count
+  desync targets (control-flow targets that land on no instruction boundary)
+  as a separate, much stronger signal — on that project there was exactly one
+  across two banks, which correctly said the decode was internally consistent
+  and the work was classification, not desync.
 - **The printed byte columns are ground truth.** Most generated sources
   carry the original bytes in each line's comment (`; 92E0 E0 00 14`).
   Hand-decode from those bytes under the corrected assumption — don't trust
