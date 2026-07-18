@@ -230,6 +230,23 @@ is for a name, and say in the annotation why the wrong reading was reachable.
   instruction boundary (a `jsr` operand followed by the next opcode), so
   confirm each hit decodes as an instruction *at that address* before
   believing it.
+  **A READ census picks up phantom reads the CPU performs but the program
+  never asked for.** On 6502, `STA abs,X` / `STA abs,Y` is a fixed 5-cycle
+  instruction that always performs a dummy READ at the un-carried address —
+  `(base & $FF00) | ((base_lo + X) & $FF)` — before storing to the real one.
+  Those reads are on the bus, so a cycle-accurate core reports them, and they
+  look exactly like a consumer you were hunting. A read census over a
+  terrain map at `$04B0`–`$0527` returned four PCs; three were `sta $05F8,x`
+  instructions whose dummy read lands at `$0500+((X-8) & $FF)` — inside the
+  watched range precisely when X was in the object-slot index range. All
+  three would have been written up as consumers. Two cheap defenses, both
+  worth making routine: **run the same census as `kind='write'` and diff** —
+  a PC that appears only in the read arm and stores nowhere near the range is
+  the tell — and **disassemble every PC before believing it**, because a
+  phantom-read hit disassembles to a store instruction with an operand
+  outside the range, which is immediately obvious once you look. The general
+  shape: on a cycle-accurate core, "the CPU read this address" and "the
+  program reads this variable" are different claims.
 - **"Never changes" is not "never written."** `watch(on='mem')` reports value
   *changes* between frame samples, so a byte the game rewrites every frame
   with the same value shows `eventCount: 0` — indistinguishable from dead
