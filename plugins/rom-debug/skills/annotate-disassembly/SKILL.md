@@ -120,10 +120,15 @@ item list can instantly name one they're looking at.
 
 **Save-state gotcha (live vs. frozen):** a state captured at a paused or
 transitional moment can have key dispatchers not running — code you're
-watching never executes and everything looks dead. Before trusting a state
-for tracing, set a breakpoint on a routine you *know* runs constantly (the
-NMI handler, the main loop) and confirm it fires within a few frames. If it
-doesn't, advance frames to a live moment and re-save.
+watching never executes and everything looks dead. On romdevtools ≥0.102.0,
+`state(op='load')` probes this for you: the result carries
+`liveness: {alive, pcVaried, framebufferChanged}`, and the probe re-restores
+the exact state afterward (side-effect-free). Treat `alive:false` as
+"advance frames to a live moment and re-save before tracing anything";
+pass `probeLiveness:false` only for frame-exact flows (byte-identity
+comparisons). On older versions, check by hand: set a breakpoint on a
+routine you *know* runs constantly (the NMI handler, the main loop) and
+confirm it fires within a few frames.
 
 ## The loop (one behavior per iteration)
 
@@ -232,6 +237,15 @@ friendlier description happens to be true.
   question outright — occupancy, flags, which slot is the player — with no
   breakpoint at all. Arm instrumentation only when you need the *writer*,
   not the value.
+- **Pull your own annotated source by address.** On romdevtools ≥0.103.0,
+  `disasm(target='sourceLookup', projectDir, startAddress, endAddress?)`
+  returns the project source lines whose trailing address comment
+  (`; E4DB 20 E4 D2`) falls in range, context and annotations intact — no
+  grepping hex patterns over a 7000-line bank file, and none of that
+  approach's failure modes (nibble-class truncation, data-table false hits),
+  since it matches the parsed address. `symbols(op='lookup')` is the
+  complement: lookup names the enclosing *label*, sourceLookup gives the
+  *text*. Use lookup to name the routine, sourceLookup to read it.
 - `watch` (or `breakpoint(on='write'/'read')`) on the anchor address, then
   trigger the behavior — by RAM injection where possible — and the PC that
   trips is your routine. This beats any amount of static reading.
@@ -242,12 +256,13 @@ friendlier description happens to be true.
   PCs attached to a *value timeline* (`watch(on='mem')`) as approximate:
   cores may report the PC at the frame-boundary sample point, not the store
   instruction, and that PC can be pure fiction. Confirm a suspected writer
-  with an exact write breakpoint, or statically — byte-scan the ROM for the
-  store opcode (`sta $A4` = `85 A4` via `memory(op='readCart', findHex=…)`).
-  Byte-scan hits need their own check: the same two bytes can straddle an
-  instruction boundary (a `jsr` operand followed by the next opcode), so
-  confirm each hit decodes as an instruction *at that address* before
-  believing it.
+  with an exact write breakpoint, or statically — on romdevtools ≥0.101.0,
+  `disasm(target='accessScan', address=…)` (hits are boundary-verified); on
+  older versions, byte-scan the ROM for the store opcode (`sta $A4` = `85 A4`
+  via `memory(op='readCart', findHex=…)`). Raw byte-scan hits need their own
+  check: the same two bytes can straddle an instruction boundary (a `jsr`
+  operand followed by the next opcode), so confirm each hit decodes as an
+  instruction *at that address* before believing it.
   **A READ census picks up phantom reads the CPU performs but the program
   never asked for.** On 6502, `STA abs,X` / `STA abs,Y` is a fixed 5-cycle
   instruction that always performs a dummy READ at the un-carried address —
@@ -264,7 +279,12 @@ friendlier description happens to be true.
   phantom-read hit disassembles to a store instruction with an operand
   outside the range, which is immediately obvious once you look. The general
   shape: on a cycle-accurate core, "the CPU read this address" and "the
-  program reads this variable" are different claims.
+  program reads this variable" are different claims. (romdevtools ≥0.101.0
+  automates the check on the 6502-family cores: read-census rows from an
+  indexed store whose operand base is outside the range come back flagged
+  `phantomRead: true` with the real `storeBase`. The decode is fixed-bank,
+  so a PC in a switched bank can escape it — the write-census diff stays
+  the backstop.)
 - **A census that reports `truncated: true` can support a positive but never
   a negative.** The event log is ring-buffered, so an overflowing run has
   silently dropped rows — and "no PC outside this cluster appeared" is exactly
@@ -275,7 +295,21 @@ friendlier description happens to be true.
   When the answer you want is an *absence*, shorten the window (or narrow the
   range) until the run fits, and say in the annotation that it did. One noisy
   PC firing thousands of times per second is usually what fills the buffer, and
-  it is rarely the one under investigation.
+  it is rarely the one under investigation. romdevtools ≥0.102.0 runs the
+  shortening loop for you: `autoNarrow:true` on a range census halves the
+  window from a save-state anchor until the run fits, and the returned
+  `autoNarrowed: {framesUsed, complete}` is the annotation's "the census
+  covered everything" citation. It refuses without a `fromState`/
+  `fromStatePath` anchor — un-anchored re-runs drift, and a drifted
+  "complete" census would be a lie with good posture.
+- **Don't arm a watch while halted at a breakpoint hit.** A range watch armed
+  after a pc-breakpoint has already hit misses everything that executed
+  earlier in the broken frame, and its 0 events read as a clean negative —
+  exactly when "nothing writes X" is load-bearing. Arm the watch *before*
+  driving to the moment; `fromState`/`fromStatePath` does both in one call
+  (the restore re-anchors execution). romdevtools ≥0.103.0 flags the bad
+  case itself (`armedWhileHalted:true` + guidance in the result), but the
+  fix is the same either way.
 - **Compare censuses in matched units — routines, not PCs.** A
   read-modify-write (`lda $90 / ora #$80 / sta $90`) logs its read and its
   write as two separate PCs, so a byte touched by five routines can report nine
@@ -283,7 +317,11 @@ friendlier description happens to be true.
   like a refutation and is not. Before writing up a discrepancy, group the PCs
   by the routine each falls inside and compare *those*; and when recording a
   census result, state which unit the number is in, because the next session
-  will re-run it and needs to know what would count as disagreement.
+  will re-run it and needs to know what would count as disagreement. On
+  romdevtools ≥0.101.0 the tool groups for you: pass `dbgPath` (cc65 `.dbg`)
+  or `mapPath` (sdld / GNU ld `.map`) and every byPC row carries `routine`
+  (nearest preceding symbol) plus a `byRoutine` rollup — record that, and
+  the census survives re-runs without false refutations.
 - **When a whole CLASS of past results is in doubt, characterize the
   instrument instead of re-running every result.** A tool bug (say, watches
   that mishandled mirrored addresses) invites re-verifying every conclusion
@@ -338,42 +376,45 @@ friendlier description happens to be true.
   worth naming before anything else, and 0 callers on a routine that
   plainly does something means a dispatch mechanism you haven't found yet —
   both facts belong in the annotation.
-- **Bound a byte's writers exhaustively with a store scan.** For a zero-page
-  address the store is two bytes (`sta $83` = `85 83`), so one
-  `memory(op='readCart', findHex=…)` enumerates *every* direct writer in the
-  ROM — usually a handful. That converts vague claims into bounded ones: read
-  the masking instruction at each site and you can say which bits any code is
-  even *capable* of changing. In one case seven stores existed, six touched
-  only bits 0/1/7, and the lone remaining site (an `eor` on a pause-exit path)
-  was therefore provably the only thing in the game that could set the bit in
-  question — a conclusion no amount of live watching would have justified,
-  because the mode simply never changed during ordinary play. Pair it with
-  the same instruction-boundary check as any byte-scan, and remember it finds
-  only *direct* stores: indexed (`sta $80,x`) or indirect writes need the
-  dynamic census too, so treat a clean scan as an upper bound on direct
-  writers, not proof no other path exists.
-  The same limit bites harder on a *value* scan. Hunting the producers of a
-  particular value (`lda #$53` = `A9 53`) only finds the sites that name it as
-  an immediate — and engines routinely write the same field from a table
-  (`lda tbl,y; sta state,x`), which the scan cannot see. One such scan returned
-  exactly one spawner for an object type and made a dead-code conclusion look
-  airtight; the real producers were two arms of a reward dispatcher that spawned
-  through a table-driven helper. Immediate scans enumerate *literal* writers,
-  nothing more.
-  **When a scan for a known-live address comes back empty everywhere, suspect
-  the addressing mode, not the code.** A buffer the game plainly maintains but
-  that no scan can find is almost never absent — it is being reached through an
-  index whose *base* is a different address, so the operand bytes you searched
-  for never appear. One high-score buffer at `$0182` had zero absolute writers
-  in the entire ROM outside cold-boot init; every access went through
-  `$0181,y` with `y`=1..7 in the compare/copy loop and `$0100,y` in the shared
-  drawer, so no scan for `82 01` could ever hit. The fix is cheap: when the
-  target sits at `base+k`, re-scan for the plausible bases too — the page base
-  (`$0100,y` for anything in page 1), and `addr-1`/`addr-2` for loops that index
-  from 1 rather than 0 — and scan the `,y`/`,x` opcode forms (`B9`/`99`/`BD`/
-  `9D`), not just the absolute ones. A structural blind spot in the search
+- **Bound a byte's writers exhaustively with an access scan.** On romdevtools
+  ≥0.101.0, `disasm(target='accessScan', address, window?)` enumerates every
+  instruction that can statically reach the byte in one call: sites come back
+  classified read / write / rmw with the index offset needed, hits are
+  boundary-verified (the scan rides the per-bank disassembly, not raw byte
+  matching), and indexed forms are covered — bases within `window` (default
+  2) below the target plus the page base. That closes the classic blind spot
+  where a buffer at `base+k` has *zero* hits under any byte scan for its own
+  address: one high-score buffer at `$0182` had no absolute writers in the
+  entire ROM outside cold-boot init, because every access went through
+  `$0181,y` (loop indexing from 1) and `$0100,y` (a shared page-base drawer),
+  so no scan for `82 01` could ever hit. On older versions, hand-scan with
+  `memory(op='readCart', findHex=…)` (`sta $83` = `85 83`), decode-check
+  every hit for instruction-boundary straddles, and before believing an
+  empty result re-scan `addr-1`/`addr-2` and the page base in the indexed
+  opcode forms (`B9`/`99`/`BD`/`9D`) — a structural blind spot in the search
   reads exactly like an absent feature, which is why "no writer exists" needs
   to be the start of a new scan rather than a conclusion.
+  Either way, the payoff is bounded claims: read the masking instruction at
+  each site and you can say which bits any code is even *capable* of
+  changing. In one case seven stores existed, six touched only bits 0/1/7,
+  and the lone remaining site (an `eor` on a pause-exit path) was therefore
+  provably the only thing in the game that could set the bit in question — a
+  conclusion no amount of live watching would have justified, because the
+  mode simply never changed during ordinary play. And either way the result
+  is an upper bound on *statically visible* accessors: table-driven writers
+  and fully indirect paths are invisible (accessScan's result says so), so
+  the dynamic census (`watch(on='range', kind='write')`) remains the
+  follow-up before claiming no other path exists.
+  The same limit bites harder on a *value* scan — and this one stays manual
+  by design (producer questions are dataflow, and the live census is the
+  dataflow instrument). Hunting the producers of a particular value
+  (`lda #$53` = `A9 53`) only finds the sites that name it as an immediate —
+  and engines routinely write the same field from a table
+  (`lda tbl,y; sta state,x`), which no static scan can see. One such scan
+  returned exactly one spawner for an object type and made a dead-code
+  conclusion look airtight; the real producers were two arms of a reward
+  dispatcher that spawned through a table-driven helper. Immediate scans
+  enumerate *literal* writers, nothing more.
 - **Before you call a branch dead, breakpoint it.** When the static reading says
   a path is unreachable — a flag nothing ever sets, an arm no caller selects —
   that conclusion is worth about one tool call to falsify, and falsifying it is
@@ -479,10 +520,17 @@ friendlier description happens to be true.
 - **Decode interpreters, then verify by prediction.** Script/bytecode
   interpreters (level scripts, spawn choreography, cutscene players) are
   the densest annotation wins: one grammar explains a whole data bank. Once
-  the dispatch is understood, write a small decoder for the format and
-  commit it to the project (`tools/`) — the decoded timeline is
-  documentation in itself (where every boss/event sits) and later sessions
-  decode sibling scripts for free. Then verify by *prediction*: from the
+  the dispatch is understood, capture the format as a reusable decoder. On
+  romdevtools ≥0.101.0, prefer `disasm(target='script', grammar,
+  address|fileOffset)` — the grammar is declarative data in the call
+  (per-opcode field lists, flag-conditional presence with implied defaults,
+  counted and terminator-ended lists, record prefix fields, stop/chain
+  commands), so the verified format is reproducible by any future session
+  from the call itself; commit the grammar (and sample invocations) to the
+  project. On older versions, write a small decoder script and commit it to
+  `tools/`. Either way the decoded timeline is documentation in itself
+  (where every boss/event sits) and later sessions decode sibling scripts
+  for free. Then verify by *prediction*: from the
   cart bytes, predict which handler fires next and at what trigger value,
   and arm a pc-breakpoint on the predicted handler. A hit at exactly the
   predicted trigger — with the dispatcher's register signature at entry —
