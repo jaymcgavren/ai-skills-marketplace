@@ -544,6 +544,19 @@ is the difference between the recipe working and not.
     update could go straight to the PPU or had to be deferred — i.e. the
     shadow is a *safety interlock*, not a convenience copy. Chase the readers
     before you consider the byte documented.
+- **The feature may live one call deeper than the flag.** An exhaustive
+  byte-scan for every addressing form of a gate flag proves you have the
+  complete set of *gated branches* — it does not prove you've seen what those
+  branches do. Before writing "documented feature X has no consumer / the
+  claim is loose", walk the call tree *inside* each gated branch: the
+  interesting work is often in an unannotated helper the branch calls, where
+  the flag itself is never read again. One debug-mode hunt stalled for days
+  on "all four readers of the gate are known and none skips levels" — the
+  level-skip, max-lives, boss-kill, and fast-forward commands were all in a
+  single raw `jsr` target inside the pause loop's gated branch, which
+  re-scanned an expansion keyboard the rest of the game never touches. The
+  flag xref was necessary; the negative was wrong until the branch bodies
+  were read to the leaves.
 - **Read the hit, not the aftermath:** a `breakpoint` hit returns
   `registersAtHit` (the register file at the break instant — a follow-up
   `cpu(op='read')` gives end-of-frame state instead) and takes
@@ -981,3 +994,21 @@ watchpoint negative is only evidence once you've covered the mirror forms
 (and the same goes for read-watches backing a "nothing consumes this"
 claim). Vary one assumption at a time, and ask the human what *they* do to
 trigger the behavior on real hardware.
+
+A special case worth naming: **code gated on a peripheral the core doesn't
+emulate** (expansion keyboards, light guns, serial devices) is dead on every
+natural run — the scan bails and the handler body never executes, no matter
+what you press. The shape that works: (1) prove the *entry* runs (pc-break on
+the caller) and the *body* doesn't (pc-break past the bail guard, held over
+many frames — that negative is the peripheral's absence, not the feature's);
+(2) drive the body directly with `cpu(op='call')` at the post-guard address,
+using `presetMemory` to fake the bytes the peripheral scan would have
+written, and read back the side effects; (3) re-verify the downstream chain
+by poking those side-effect bytes into a clean live run and watching the real
+consequence happen. Step 3 is not optional decoration: an out-of-band
+`cpu(op='call')` while the game is parked mid-loop can leave the resumed
+context subtly wrong (one such call left the stack pointer off by two; the
+pause loop's exit `pla/pla/rts` then popped garbage and crashed the machine
+into RAM — *after* the reads of interest were safely taken). Trust the RAM
+you read back immediately after the call; do not trust the machine that made
+it. Reload a state before anything end-to-end.
