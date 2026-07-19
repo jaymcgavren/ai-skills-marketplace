@@ -459,6 +459,26 @@ is the difference between the recipe working and not.
   path was the special case. Absence over a long drive is only evidence, but
   presence is proof, and you are far more likely to be wrong in the direction
   that a breakpoint catches.
+- **"Unused level N" claims have two independent halves — prove both, and
+  force the index anyway.** "Slot 0 of the area table is unused" decomposes
+  into *unreachability* (census every writer of the index variable and bound
+  each one's value domain) and *absence of content* (inspect what the [N]
+  table rows actually hold — duplicated neighbor rows and null pointers say
+  padding; coherent unique data says latent content worth a deeper look).
+  Then spend three pokes forcing the index live regardless: what the engine
+  does with the null entry is the finding that makes the annotation concrete
+  — one "unused area 0" had a $0000 mapscript pointer that sent the map
+  interpreter walking *zero page* as its script, yielding a running blank
+  void, which settles "padding, nothing latent" far better than the census
+  alone. Two traps inside the census: (a) a writer that stores an
+  out-of-domain value is not automatically a refutation of unreachability —
+  trace the value to its COMMIT point first; one `$92 = 0` writer looked like
+  a path to area 0 until the consumer's branch order showed its accompanying
+  flag diverted the transition to the ending *before* the commit, making the
+  0 a "no next area" sentinel that is written but never consumed. (b) a
+  data-driven writer (index ← actor field ← level data) can't be bounded by
+  reading code — scope the claim ("no reachable data known to carry 0") or
+  scan the data stream, but don't silently promote it to proven.
 - **A byte a routine only READS is a PARAMETER — go find who set it.** The
   fastest way into an actor whose branches make no sense is to notice which
   bytes it consumes without ever writing, and scan for the store. One handler
