@@ -246,6 +246,19 @@ what the code says, not what the game does. Then annotate both: the actual
 decode, and the fact that the producers stay inside the region where the
 friendlier description happens to be true.
 
+A seventh, specific to cheat/easter-egg claims: **the published recipe is a
+human ritual; the code gates on something simpler.** "Hold A+B and press
+Reset for the sound test" turned out to be a plain A+B check at the title
+screen's first joypad read — Reset was never special, it's just how a human
+arranges to be holding the buttons at that moment. "Soft-reset 13 times"
+was a counter compared against 13. Find the input *read* the recipe gates
+on and verify the actual condition: it is usually broader (cheaper to
+trigger in an emulator — no Reset needed) and the details differ in single
+opcodes worth transcribing exactly — the same game checked "A+B on both
+controllers" with an AND of the two pads at its ending easter egg, and
+"A+B on either pad" with an OR at the sound test. One conjunction opcode
+is the difference between the recipe working and not.
+
 ### 3. Let the debugger name the code
 
 - **Read before you instrument.** If the moment of interest is already live
@@ -475,7 +488,14 @@ friendlier description happens to be true.
     recognizably something else (the first record's own header, `$FF` padding,
     the following table). That converts "this looks like 7 entries" into a
     bounded claim. One 7-entry resource table's 8th word decoded as the first
-    stream's marker header — which *is* the proof it has 7 entries.
+    stream's marker header — which *is* the proof it has 7 entries. And when
+    a script/text table has an in-band terminator, the bytes past it can be
+    *deliberate hidden content* rather than the next structure: one credits
+    script ended with its stop byte at offset $D7, and offset $D8 held a
+    hidden message reachable only by an easter-egg path that re-enters the
+    interpreter with a hardcoded `ldx #$D8`. A constant index loaded right
+    before a re-entry into an interpreter you've decoded is a pointer to
+    hidden data — follow it.
   - **If records are packed back-to-back, require the chain to close.** Walk
     record *i* by your decode of its format; it must terminate EXACTLY on the
     address in table entry *i+1*, for every entry, with the last landing on
@@ -948,6 +968,9 @@ rewriting such a region as real instructions:
 If breakpoints don't fire or nothing responds: (a) confirm the state is live
 (see gotcha above); (b) question your input assumptions — games bind actions
 to unexpected buttons, and holding the wrong one can mask a whole subsystem;
+a blank screen after a button-gated entry may be a loop waiting for you to
+*release* the very buttons that got you in (one sound test held a gray
+screen for 800 frames until A+B were let go);
 (c) confirm your poke actually landed by reading it back; (d) check you're in
 the right bank — the same CPU address means different code after a bank
 switch; (e) **arm the watchpoint on every alias of the address**. On SNES,
