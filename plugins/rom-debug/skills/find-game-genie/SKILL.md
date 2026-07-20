@@ -1,11 +1,11 @@
 ---
-name: game-genie
 description: >
   Mine a documented disassembly for interesting single-byte ROM patches and
   turn them into verified, published Game Genie codes. Use when the user asks
   for Game Genie / cheat codes for a game that has an annotated disassembly,
   ROM map, or RAM map available — especially when they want *unusual* codes
   that demonstrate how the program works, not the classic infinite-lives set.
+allowed-tools: Read Write Edit Grep Glob Bash AskUserQuestion mcp__romdev__memory mcp__romdev__cheats mcp__romdev__state mcp__romdev__frame mcp__romdev__input mcp__romdev__playtest mcp__romdev__disasm mcp__romdev__loadMedia mcp__romdev__symbols mcp__romdev__catalog mcp__romdev__platform
 ---
 
 # Game Genie codes from a disassembly
