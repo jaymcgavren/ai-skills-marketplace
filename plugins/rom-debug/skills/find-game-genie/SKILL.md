@@ -19,8 +19,8 @@ The work runs in **two phases**:
    resumable and nothing gets mined twice. Breadth first; no verifying or
    encoding here. Do this yourself, in the main session.
 2. **Per-code pipeline** — take one candidate at a time through **verify bytes
-   → live-test raw → bank → encode → round-trip → live-test letters →
-   publish**. Never publish a code that hasn't passed the live tests. **Delegate
+   → live-test raw → encode → round-trip → live-test letters → publish**.
+   Never publish a code that hasn't passed the live tests. **Delegate
    this to a subagent running a lower-power model** (see Phase 2) — the backlog
    is written precisely so a cheaper model can execute each item.
 
@@ -35,7 +35,9 @@ final set *broad* and *representative*, which is the whole point of these codes.
 - The romdev MCP tools (`memory`, `cheats`, `state`, `frame`) with the game
   loaded, plus save states covering the game modes the codes touch (title,
   gameplay, ending, etc.).
-- Know the mapper/banking layout before encoding anything (see "Banking").
+- Know the mapper/banking layout before you start — you need it to read the
+  original byte from the right bank when verifying (Step 1). It does not
+  affect the code format: every code is 8-letter with a compare byte.
 
 ## Where to start — check the sweep state first
 
@@ -131,9 +133,10 @@ that a lower-power model can run Phase 2 without re-deriving anything:
 Also carry the Phase-2 reminders into the backlog header so the executor has
 them in front of it: verify the byte against BOTH the source line and the live
 ROM, live-test the raw patch, encode with a round-trip-checked script, have a
-human play-verify the *letter* code, then publish. State the code format the
-project wants (e.g. "8-letter codes with a compare byte") and that the pipeline
-runs on volatile cheats — **do not modify the disassembly source.**
+human play-verify the *letter* code, then publish. Restate the code format as a
+hard rule — **8-letter codes with a compare byte, never 6-letter, regardless of
+which bank the address is in** — and note that the pipeline runs on volatile
+cheats, so **do not modify the disassembly source.**
 
 ### Keep a coverage log
 
@@ -166,9 +169,9 @@ verification, below).
 Dispatch one candidate per subagent run (or a small batch of related ones).
 Give the subagent: the backlog item, the path to the disassembly and the ROM,
 which save state to use, the project's code format, and these instructions:
-run Steps 1–4 and 6 below, and for **Step 5 stop and report back** the letter
+run Steps 1–3 and 5 below, and for **Step 4 stop and report back** the letter
 code and how to verify it — do not attempt an interactive human playtest from
-inside a subagent. Collect the Step-5 codes from finished subagents and batch
+inside a subagent. Collect the Step-4 codes from finished subagents and batch
 them for the human to play-verify (`AskUserQuestion` / a playtest window) before
 the entry is considered published.
 
@@ -199,48 +202,44 @@ moment from a suitable save state. Gotchas learned the hard way:
 A candidate that doesn't produce its predicted effect is a finding too —
 record why and drop or revise it.
 
-### Step 3 — Banking determines the code length
+### Step 3 — Encode, then round-trip
 
-Game Genie patches by CPU address, so bank switching matters:
-
-- Addresses in a **fixed** (always-mapped) region → a plain code with no
-  compare value is safe (NES: 6-letter, for `$C000`–`$FFFF` on most mappers
-  with a fixed upper bank).
-- Addresses in a **switchable** region → you MUST use the compare-byte form
-  (NES: 8-letter) with compare = the original byte, so the patch only lands
-  when the intended bank is mapped in. Note that another bank with the same
-  byte at that offset would also match — check for that if behavior is odd.
-
-Work out the mapper's fixed/switchable split from the disassembly build
-layout before encoding.
-
-### Step 4 — Encode, then round-trip
+**Always emit the 8-letter form, with a compare byte. Never record a 6-letter
+code** — not even for an address in a fixed, always-mapped bank where a
+5-letter/6-letter code would technically resolve. The compare byte is what
+makes a code state which original byte it expects, so it stays correct if the
+address is ever reached with a different bank mapped in, and it is
+self-documenting when someone reads the code back later.
 
 NES letter alphabet (letter → nibble): `A=0 P=1 Z=2 L=3 G=4 I=5 T=6 Y=7
-E=8 O=9 X=A U=B K=C S=D V=E N=F`. Canonical **decode** (letters n[0..5] or
-n[0..7] as nibble values):
+E=8 O=9 X=A U=B K=C S=D V=E N=F`. Canonical **decode** (letters n[0..7] as
+nibble values):
 
 ```python
 address = 0x8000 + (((n[3] & 7) << 12)
         | ((n[5] & 7) << 8) | ((n[4] & 8) << 8)
         | ((n[2] & 7) << 4) | ((n[1] & 8) << 4)
         |  (n[4] & 7)       |  (n[3] & 8))
-if six_letter:
-    data = ((n[1] & 7) << 4) | ((n[0] & 8) << 4) | (n[0] & 7) | (n[5] & 8)
-else:  # 8-letter; bit 3 of n[2] must be SET to mark it
-    data    = ((n[1] & 7) << 4) | ((n[0] & 8) << 4) | (n[0] & 7) | (n[7] & 8)
-    compare = ((n[7] & 7) << 4) | ((n[6] & 8) << 4) | (n[6] & 7) | (n[5] & 8)
+# 8-letter; bit 3 of n[2] must be SET to mark it
+data    = ((n[1] & 7) << 4) | ((n[0] & 8) << 4) | (n[0] & 7) | (n[7] & 8)
+compare = ((n[7] & 7) << 4) | ((n[6] & 8) << 4) | (n[6] & 7) | (n[5] & 8)
 ```
 
 Write the **encoder as the inverse of this decoder** in a scratchpad script,
-and make the script assert the round trip: encode(addr, data[, compare]) →
+and make the script assert the round trip: encode(addr, data, compare) →
 decode → must reproduce the inputs exactly. Do not hand-derive bit shuffles.
+
+One compare-byte caveat worth knowing: a different bank holding the same byte
+at that offset will also match, so the patch can land somewhere unintended.
+Check for that if the live behavior is odd.
 
 Other platforms (SNES, Game Boy, Genesis) have Game Genie schemes with
 different alphabets and scrambles — look the scheme up per platform; the
-verify, live-test, and publish steps are platform-independent.
+verify, live-test, and publish steps are platform-independent. Where a
+platform's scheme offers a choice, apply the same principle as the NES rule
+above and pick the form that carries a compare value.
 
-### Step 5 — Prove the letter code itself
+### Step 4 — Prove the letter code itself
 
 The encoder being self-consistent is not enough: apply the **letter** code
 via `cheats({op:'apply', code:'XXXXXXXX'})` and ask a human to play and
@@ -248,7 +247,7 @@ re-verify the behavior. (Do not play the game yourself, that is too
 token-inefficient.) The emulator core's own decoder is the independent
 referee — if the letter code works live, the encoding is right.
 
-### Step 6 — Publish
+### Step 5 — Publish
 
 Write `notes/game_genie_codes.md` (or the repo's convention) with one entry
 per code:
