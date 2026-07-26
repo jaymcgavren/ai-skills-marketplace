@@ -1,12 +1,12 @@
 ---
 description: >
   Mine a documented disassembly for interesting single-byte ROM patches and
-  turn them into verified, published Game Genie codes. Use when the user asks
+  turn them into byte-verified, published Game Genie codes. Use when the user asks
   for Game Genie / cheat codes for a game that has an annotated disassembly,
   ROM map, or RAM map available — especially when they want *unusual* codes
   that demonstrate how the program works, not the classic infinite-lives set.
   Runs a systematic candidate sweep first, then works codes one at a time.
-allowed-tools: Task Read Write Edit Grep Glob Bash AskUserQuestion mcp__romdev__memory mcp__romdev__cheats mcp__romdev__state mcp__romdev__frame mcp__romdev__input mcp__romdev__playtest mcp__romdev__disasm mcp__romdev__loadMedia mcp__romdev__symbols mcp__romdev__catalog mcp__romdev__platform
+allowed-tools: Task Read Write Edit Grep Glob Bash AskUserQuestion mcp__romdev__memory mcp__romdev__disasm mcp__romdev__loadMedia mcp__romdev__symbols mcp__romdev__catalog mcp__romdev__platform
 ---
 
 # Game Genie codes from a disassembly
@@ -19,10 +19,9 @@ The work runs in **two phases**:
    resumable and nothing gets mined twice. Breadth first; no verifying or
    encoding here. Do this yourself, in the main session.
 2. **Per-code pipeline** — take one candidate at a time through **verify bytes
-   → live-test raw → encode → round-trip → live-test letters → publish**.
-   Never publish a code that hasn't passed the live tests. **Delegate
-   this to a subagent running a lower-power model** (see Phase 2) — the backlog
-   is written precisely so a cheaper model can execute each item.
+   → encode → round-trip → publish**. **Delegate this to a subagent running a
+   lower-power model** (see Phase 2) — the backlog is written precisely so a
+   cheaper model can execute each item.
 
 **Always finish the sweep before working individual codes.** A half-mined
 disassembly yields a lopsided code set — a dozen codes from the first subsystem
@@ -32,9 +31,8 @@ final set *broad* and *representative*, which is the whole point of these codes.
 ## Prerequisites
 
 - An annotated disassembly (or at minimum a ROM map) for the target game.
-- The romdev MCP tools (`memory`, `cheats`, `state`, `frame`) with the game
-  loaded, plus save states covering the game modes the codes touch (title,
-  gameplay, ending, etc.).
+- The romdev MCP `memory` tool with the game loaded, so you can read the
+  original bytes out of the actual ROM when verifying (Step 1).
 - Know the mapper/banking layout before you start — you need it to read the
   original byte from the right bank when verifying (Step 1). It does not
   affect the code format: every code is 8-letter with a compare byte.
@@ -60,8 +58,8 @@ Phase 2 for that item — but a bare "find me Game Genie codes" means sweep firs
 
 ## Phase 1 — Systematic sweep: build the candidate backlog
 
-Mine the disassembly for candidates and **record them; do not verify, live-test,
-or encode in this phase.** The output is a backlog a lower-power model can later
+Mine the disassembly for candidates and **record them; do not verify or encode
+in this phase.** The output is a backlog a lower-power model can later
 execute one item at a time. Keep it systematic and resumable:
 
 **Focus on what affects gameplay most directly.** Enumerate the game's
@@ -132,11 +130,10 @@ that a lower-power model can run Phase 2 without re-deriving anything:
 
 Also carry the Phase-2 reminders into the backlog header so the executor has
 them in front of it: verify the byte against BOTH the source line and the live
-ROM, live-test the raw patch, encode with a round-trip-checked script, have a
-human play-verify the *letter* code, then publish. Restate the code format as a
-hard rule — **8-letter codes with a compare byte, never 6-letter, regardless of
-which bank the address is in** — and note that the pipeline runs on volatile
-cheats, so **do not modify the disassembly source.**
+ROM, encode with a round-trip-checked script, then publish. Restate the code
+format as a hard rule — **8-letter codes with a compare byte, never 6-letter,
+regardless of which bank the address is in** — and note that the pipeline
+never edits the ROM on disk, so **do not modify the disassembly source.**
 
 ### Keep a coverage log
 
@@ -163,20 +160,15 @@ Cosmetic/sound regions may be left explicitly deferred rather than swept.
 tool — e.g. Haiku, or Sonnet if the encoding step needs it). The backlog you
 built in Phase 1 already carries everything the executor needs, so a cheaper
 model is the right tool; your job in the main session is to dispatch and to
-handle the one step a subagent can't do alone (the human letter-code
-verification, below).
+collect the results.
 
 Dispatch one candidate per subagent run (or a small batch of related ones).
 Give the subagent: the backlog item, the path to the disassembly and the ROM,
-which save state to use, the project's code format, and these instructions:
-run Steps 1–3 and 5 below, and for **Step 4 stop and report back** the letter
-code and how to verify it — do not attempt an interactive human playtest from
-inside a subagent. Collect the Step-4 codes from finished subagents and batch
-them for the human to play-verify (`AskUserQuestion` / a playtest window) before
-the entry is considered published.
+the project's code format, and the instruction to run all three steps below and
+report the published entry back.
 
-The per-candidate steps follow. Steps 1–2 are the gate: a candidate that fails
-them is a finding too — record why and drop or revise it.
+The per-candidate steps follow. Step 1 is the gate: a candidate whose bytes
+don't check out is a finding too — record why and drop or revise it.
 
 ### Step 1 — Verify the original bytes
 
@@ -185,24 +177,7 @@ listing and the actual ROM (`memory({op:'readCart'})` at the CPU address).
 Quote the source line in your notes. If they disagree, the disassembly is wrong
 there — stop and investigate.
 
-### Step 2 — Live-test as a raw patch first
-
-Apply the raw three-part ROM-patch cheat `ADDR:NEW:OLD` (address:value:compare
-— the three-part form is a ROM patch, not a RAM freeze) and play the relevant
-moment from a suitable save state. Gotchas learned the hard way:
-
-- Addresses must be **all 4 hex digits**; short forms are silently accepted
-  but do nothing.
-- Never trust the `applied: true` echo — verify by *behavior* (and for RAM
-  cheats, by reading the byte back).
-- Cheats are volatile: re-apply after every `state({op:'load'})` or reset.
-- Screenshot the effect; note anything unexpected (glitches, side effects on
-  other code paths that read the same byte).
-
-A candidate that doesn't produce its predicted effect is a finding too —
-record why and drop or revise it.
-
-### Step 3 — Encode, then round-trip
+### Step 2 — Encode, then round-trip
 
 **Always emit the 8-letter form, with a compare byte. Never record a 6-letter
 code** — not even for an address in a fixed, always-mapped bank where a
@@ -231,33 +206,28 @@ decode → must reproduce the inputs exactly. Do not hand-derive bit shuffles.
 
 One compare-byte caveat worth knowing: a different bank holding the same byte
 at that offset will also match, so the patch can land somewhere unintended.
-Check for that if the live behavior is odd.
+Check the other banks for that byte at that offset and note it in the writeup.
 
 Other platforms (SNES, Game Boy, Genesis) have Game Genie schemes with
 different alphabets and scrambles — look the scheme up per platform; the
-verify, live-test, and publish steps are platform-independent. Where a
-platform's scheme offers a choice, apply the same principle as the NES rule
-above and pick the form that carries a compare value.
+verify and publish steps are platform-independent. Where a platform's scheme
+offers a choice, apply the same principle as the NES rule above and pick the
+form that carries a compare value.
 
-### Step 4 — Prove the letter code itself
-
-The encoder being self-consistent is not enough: apply the **letter** code
-via `cheats({op:'apply', code:'XXXXXXXX'})` and ask a human to play and
-re-verify the behavior. (Do not play the game yourself, that is too
-token-inefficient.) The emulator core's own decoder is the independent
-referee — if the letter code works live, the encoding is right.
-
-### Step 5 — Publish
+### Step 3 — Publish
 
 Write `notes/game_genie_codes.md` (or the repo's convention) with one entry
 per code:
 
 - The letter code, the raw `ADDR:NEW:OLD` form, and which banks/regions.
 - A one-paragraph **mechanism** citing the routine/table names from the
-  disassembly — the point of these codes is that they're explainable.
-- Evidence: what was observed live, screenshots, save state used.
-- Caveats: shared code paths, glitches, interactions with other codes.
+  disassembly — the point of these codes is that they're explainable, and with
+  no playtest in the pipeline the mechanism *is* the evidence.
+- Evidence: the source line the byte came from and the ROM read that confirmed
+  it (Step 1). State plainly that the effect is derived from the disassembly
+  and has not been observed in play — don't write it up as if it had been.
+- Caveats: shared code paths, likely glitches, interactions with other codes.
 
-Do not modify the canonical disassembly source for any of this — the whole
-pipeline runs on volatile cheats, so no rebuild/byte-compare gate applies.
-Once a candidate is published, check it off in the backlog.
+Do not modify the canonical disassembly source for any of this — nothing in
+this pipeline writes to the ROM or the sources, so no rebuild/byte-compare gate
+applies. Once a candidate is published, check it off in the backlog.
