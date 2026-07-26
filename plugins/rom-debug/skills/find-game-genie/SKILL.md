@@ -5,15 +5,29 @@ description: >
   for Game Genie / cheat codes for a game that has an annotated disassembly,
   ROM map, or RAM map available — especially when they want *unusual* codes
   that demonstrate how the program works, not the classic infinite-lives set.
-allowed-tools: Read Write Edit Grep Glob Bash AskUserQuestion mcp__romdev__memory mcp__romdev__cheats mcp__romdev__state mcp__romdev__frame mcp__romdev__input mcp__romdev__playtest mcp__romdev__disasm mcp__romdev__loadMedia mcp__romdev__symbols mcp__romdev__catalog mcp__romdev__platform
+  Runs a systematic candidate sweep first, then works codes one at a time.
+allowed-tools: Task Read Write Edit Grep Glob Bash AskUserQuestion mcp__romdev__memory mcp__romdev__cheats mcp__romdev__state mcp__romdev__frame mcp__romdev__input mcp__romdev__playtest mcp__romdev__disasm mcp__romdev__loadMedia mcp__romdev__symbols mcp__romdev__catalog mcp__romdev__platform
 ---
 
 # Game Genie codes from a disassembly
 
 Turn documented reverse-engineering findings into single-byte ROM-patch codes.
-The pipeline: **mine candidates → verify bytes → live-test raw → encode →
-round-trip check → live-test letters → publish**. Never publish a code that
-hasn't passed the live tests.
+The work runs in **two phases**:
+
+1. **Systematic sweep** — mine the whole disassembly, subsystem by subsystem,
+   into a written *candidate backlog* with a *coverage log*, so the search is
+   resumable and nothing gets mined twice. Breadth first; no verifying or
+   encoding here. Do this yourself, in the main session.
+2. **Per-code pipeline** — take one candidate at a time through **verify bytes
+   → live-test raw → bank → encode → round-trip → live-test letters →
+   publish**. Never publish a code that hasn't passed the live tests. **Delegate
+   this to a subagent running a lower-power model** (see Phase 2) — the backlog
+   is written precisely so a cheaper model can execute each item.
+
+**Always finish the sweep before working individual codes.** A half-mined
+disassembly yields a lopsided code set — a dozen codes from the first subsystem
+you happened to read and nothing from the rest. The sweep is what makes the
+final set *broad* and *representative*, which is the whole point of these codes.
 
 ## Prerequisites
 
@@ -23,7 +37,47 @@ hasn't passed the live tests.
   gameplay, ending, etc.).
 - Know the mapper/banking layout before encoding anything (see "Banking").
 
-## Step 1 — Mine the source for candidates
+## Where to start — check the sweep state first
+
+Before anything else, look for an existing candidate backlog and coverage log.
+By convention they live in the project's task list (e.g. `TODO.md`) or wherever
+the repo keeps its backlog — a section of checklist items plus a "coverage log"
+listing which parts of the disassembly have been swept. There are three cases:
+
+- **No backlog recorded** → go to **Phase 1** and build it from scratch.
+- **A sweep is in progress** (the coverage log still lists unswept regions) →
+  go to **Phase 1** and *continue* it — extend the same backlog and log, don't
+  restart. Pick up at the next unswept region.
+- **The sweep is complete** (coverage log shows every gameplay-relevant region
+  swept, and unchecked candidates are waiting) → go to **Phase 2** and dispatch
+  candidates to a lower-power subagent, most interesting first.
+
+Only move to Phase 2 once the sweep is complete. If the user explicitly asks
+for one specific code and a backlog already covers it, you may jump straight to
+Phase 2 for that item — but a bare "find me Game Genie codes" means sweep first.
+
+## Phase 1 — Systematic sweep: build the candidate backlog
+
+Mine the disassembly for candidates and **record them; do not verify, live-test,
+or encode in this phase.** The output is a backlog a lower-power model can later
+execute one item at a time. Keep it systematic and resumable:
+
+**Focus on what affects gameplay most directly.** Enumerate the game's
+subsystems from the disassembly's structure (its symbol map, section
+labels, and comments), then work them in priority order — player physics and
+control, powerups and player state, enemies and their AI/parameter tables,
+scoring/items/level-flow, mode and difficulty logic. Data tables and init
+immediates in these areas make the best codes because the mechanism is fully
+explainable. Leave rendering, sound, and pure-cosmetic tables for last (or skip
+them) unless the user wants visual-oddity codes.
+
+**Go region by region and log coverage as you go.** Sweep one subsystem, record
+its candidates, then tick that region off in a coverage log that also lists the
+regions still to do (with line ranges). This is what lets a later session — or
+a cheaper model — resume exactly where you stopped instead of re-reading from
+the top.
+
+### What to look for
 
 Grep the annotated source and maps for these patterns. The goal is codes that
 each demonstrate a *different documented subsystem* — breadth over quantity.
@@ -62,14 +116,73 @@ each demonstrate a *different documented subsystem* — breadth over quantity.
 - The patched byte must be read at a well-understood moment. Beware bytes
   shared by multiple code paths (note every caller in the writeup).
 
-## Step 2 — Verify the original bytes
+### Record each candidate so a cheaper model can execute it
 
-For each candidate, confirm the exact address and original byte against BOTH
-the annotated source listing and the actual ROM (`memory({op:'readCart'})`
-at the CPU address). Quote the source line in your notes. If they disagree,
-the disassembly is wrong there — stop and investigate.
+Write candidates as checklist items in the backlog. Each entry needs enough
+that a lower-power model can run Phase 2 without re-deriving anything:
 
-## Step 3 — Live-test as a raw patch first
+- The **subsystem** and the **label / line number** the byte lives at.
+- The **exact original byte(s)** and what each table entry / immediate means.
+- A **suggested new value** and the **effect** it should produce (a starting
+  point — the executor can pick whatever reads most clearly on screen).
+- A one-line **mechanism sketch**: the routine/table that reads the byte, and
+  any *shared* readers to watch for.
+
+Also carry the Phase-2 reminders into the backlog header so the executor has
+them in front of it: verify the byte against BOTH the source line and the live
+ROM, live-test the raw patch, encode with a round-trip-checked script, have a
+human play-verify the *letter* code, then publish. State the code format the
+project wants (e.g. "8-letter codes with a compare byte") and that the pipeline
+runs on volatile cheats — **do not modify the disassembly source.**
+
+### Keep a coverage log
+
+Maintain a log alongside the candidates recording which regions of the
+disassembly have been swept and which are still to do (with line ranges), so
+future sessions extend the sweep instead of repeating it. A useful shape:
+
+```
+Swept (<date>, <pass name>):
+- [x] <subsystem> (~<line range>)
+- [x] ...
+
+Not yet swept — candidates for the next pass:
+- [ ] <subsystem> (~<line range>) — <why it might be rich>
+- [ ] ...
+```
+
+The sweep is **complete** when every gameplay-relevant region is checked off.
+Cosmetic/sound regions may be left explicitly deferred rather than swept.
+
+## Phase 2 — Turn one candidate into a published code
+
+**Delegate this phase to a subagent on a lower-power model** (via the `Task`
+tool — e.g. Haiku, or Sonnet if the encoding step needs it). The backlog you
+built in Phase 1 already carries everything the executor needs, so a cheaper
+model is the right tool; your job in the main session is to dispatch and to
+handle the one step a subagent can't do alone (the human letter-code
+verification, below).
+
+Dispatch one candidate per subagent run (or a small batch of related ones).
+Give the subagent: the backlog item, the path to the disassembly and the ROM,
+which save state to use, the project's code format, and these instructions:
+run Steps 1–4 and 6 below, and for **Step 5 stop and report back** the letter
+code and how to verify it — do not attempt an interactive human playtest from
+inside a subagent. Collect the Step-5 codes from finished subagents and batch
+them for the human to play-verify (`AskUserQuestion` / a playtest window) before
+the entry is considered published.
+
+The per-candidate steps follow. Steps 1–2 are the gate: a candidate that fails
+them is a finding too — record why and drop or revise it.
+
+### Step 1 — Verify the original bytes
+
+Confirm the exact address and original byte against BOTH the annotated source
+listing and the actual ROM (`memory({op:'readCart'})` at the CPU address).
+Quote the source line in your notes. If they disagree, the disassembly is wrong
+there — stop and investigate.
+
+### Step 2 — Live-test as a raw patch first
 
 Apply the raw three-part ROM-patch cheat `ADDR:NEW:OLD` (address:value:compare
 — the three-part form is a ROM patch, not a RAM freeze) and play the relevant
@@ -86,7 +199,7 @@ moment from a suitable save state. Gotchas learned the hard way:
 A candidate that doesn't produce its predicted effect is a finding too —
 record why and drop or revise it.
 
-## Step 4 — Banking determines the code length
+### Step 3 — Banking determines the code length
 
 Game Genie patches by CPU address, so bank switching matters:
 
@@ -101,7 +214,7 @@ Game Genie patches by CPU address, so bank switching matters:
 Work out the mapper's fixed/switchable split from the disassembly build
 layout before encoding.
 
-## Step 5 — Encode, then round-trip
+### Step 4 — Encode, then round-trip
 
 NES letter alphabet (letter → nibble): `A=0 P=1 Z=2 L=3 G=4 I=5 T=6 Y=7
 E=8 O=9 X=A U=B K=C S=D V=E N=F`. Canonical **decode** (letters n[0..5] or
@@ -124,10 +237,10 @@ and make the script assert the round trip: encode(addr, data[, compare]) →
 decode → must reproduce the inputs exactly. Do not hand-derive bit shuffles.
 
 Other platforms (SNES, Game Boy, Genesis) have Game Genie schemes with
-different alphabets and scrambles — look the scheme up per platform; steps
-1–3 and 6–7 are platform-independent.
+different alphabets and scrambles — look the scheme up per platform; the
+verify, live-test, and publish steps are platform-independent.
 
-## Step 6 — Prove the letter code itself
+### Step 5 — Prove the letter code itself
 
 The encoder being self-consistent is not enough: apply the **letter** code
 via `cheats({op:'apply', code:'XXXXXXXX'})` and ask a human to play and
@@ -135,7 +248,7 @@ re-verify the behavior. (Do not play the game yourself, that is too
 token-inefficient.) The emulator core's own decoder is the independent
 referee — if the letter code works live, the encoding is right.
 
-## Step 7 — Publish
+### Step 6 — Publish
 
 Write `notes/game_genie_codes.md` (or the repo's convention) with one entry
 per code:
@@ -148,3 +261,4 @@ per code:
 
 Do not modify the canonical disassembly source for any of this — the whole
 pipeline runs on volatile cheats, so no rebuild/byte-compare gate applies.
+Once a candidate is published, check it off in the backlog.
