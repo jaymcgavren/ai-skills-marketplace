@@ -6,6 +6,8 @@ description: >
   ROM map, or RAM map available — especially when they want *unusual* codes
   that demonstrate how the program works, not the classic infinite-lives set.
   Runs a systematic candidate sweep first, then works codes one at a time.
+  Only mines regions whose purpose is already annotated — code of unknown
+  purpose is out of scope.
 allowed-tools: Task Read Write Edit Grep Glob Bash AskUserQuestion mcp__romdev__memory mcp__romdev__cheats mcp__romdev__state mcp__romdev__frame mcp__romdev__input mcp__romdev__playtest mcp__romdev__disasm mcp__romdev__loadMedia mcp__romdev__symbols mcp__romdev__catalog mcp__romdev__platform
 ---
 
@@ -22,6 +24,11 @@ The work runs in **two phases**:
    → encode → round-trip → publish**. **Delegate this to a subagent running a
    lower-power model** (see Phase 2) — the backlog is written precisely so a
    cheaper model can execute each item.
+
+**Only mine code that is already annotated.** If a region's purpose has not
+been established and written down, it is not eligible for either phase — see
+the hard rule under Phase 1. Nothing in this pipeline playtests, so the
+annotation is the only evidence a published code ever gets.
 
 **Always finish the sweep before working individual codes.** A half-mined
 disassembly yields a lopsided code set — a dozen codes from the first subsystem
@@ -61,6 +68,47 @@ Phase 2 for that item — but a bare "find me Game Genie codes" means sweep firs
 Mine the disassembly for candidates and **record them; do not verify or encode
 in this phase.** The output is a backlog a lower-power model can later
 execute one item at a time. Keep it systematic and resumable:
+
+### Hard rule — sweep ONLY annotated code
+
+**A byte is a candidate only if the code around it is already annotated: a
+named routine or table whose purpose has been established and written down.
+If the purpose of the code is not yet known, it is out of scope — do not
+sweep it, and do not record candidates from it.**
+
+The whole value of these codes is that each one is *explainable* from the
+disassembly. Since the pipeline never playtests (Step 3 says so explicitly),
+the annotation **is** the evidence — there is nothing else. A candidate mined
+from an auto-labelled region (`L8F78`, bare `.byte` rows, a "probably a
+table" comment) produces a published entry whose mechanism paragraph is a
+guess dressed as a finding, and a wrong mechanism in `game_genie_codes.md` is
+worse than no entry, because it reads as verified.
+
+Concretely, before recording any candidate, check that:
+
+- The routine or table has a **real name and a header comment** stating what
+  it does — not an address-derived auto-label and not a bare `; ----` divider.
+- The specific byte's **role is documented**: which field of which record, or
+  what the immediate means. "This table is the per-level parameters" is not
+  enough to justify picking byte 7 of row 3; the row/field meaning must be
+  written down.
+- The comment reads as **established fact, not a hypothesis**. Annotation
+  conventions in these projects mark evidence grade ("verified: write-
+  breakpoint fired here" vs "inferred from callers, unverified"). An
+  unverified guess is not a licence to mine — treat it as unannotated.
+
+When you hit an interesting-looking region that fails these tests, **do not
+mine it and do not guess**. Record it as an *annotation* task in the project's
+backlog ("`$CC16`/`$CC26` table pair — 16 entries indexed by `$CD`, purpose
+unknown; identify before mining for codes"), and move on. That converts a
+tempting dead end into the input for a future sweep: once someone documents
+it, the region becomes sweepable and usually yields better candidates than
+guessing would have.
+
+This rule also bounds the sweep. "Complete" means *every annotated
+gameplay-relevant region* has been mined — not every byte in the ROM. An
+unannotated subsystem is not an unswept region; it is a region that is not
+yet eligible.
 
 **Focus on what affects gameplay most directly.** Enumerate the game's
 subsystems from the disassembly's structure (its symbol map, section
@@ -108,6 +156,9 @@ each demonstrate a *different documented subsystem* — breadth over quantity.
 **Anti-goals:** infinite lives, invincibility, 99 ammo — skip unless asked.
 
 **Candidate quality rules:**
+- The byte must sit in **annotated code** (see the hard rule above). This is a
+  gate, not a preference — an unexplainable candidate is not a low-quality
+  candidate, it is not a candidate.
 - One byte per effect. Real Game Genie hardware takes only 3 codes at once,
   so an effect needing >3 bytes is less desirable; prefer exactly 1.
 - Prefer *operands* (immediates, table bytes, branch targets) over opcodes.
@@ -149,10 +200,22 @@ Swept (<date>, <pass name>):
 Not yet swept — candidates for the next pass:
 - [ ] <subsystem> (~<line range>) — <why it might be rich>
 - [ ] ...
+
+Not eligible — not annotated yet (needs identifying before it can be swept):
+- [ ] <region> (~<line range>) — <what is known / what would settle it>
+- [ ] ...
 ```
 
-The sweep is **complete** when every gameplay-relevant region is checked off.
-Cosmetic/sound regions may be left explicitly deferred rather than swept.
+The third list is what keeps the annotated-code-only rule from silently
+losing information: a region skipped for being undocumented should be
+*visible* as blocked-on-annotation, not indistinguishable from one that was
+swept and found barren.
+
+The sweep is **complete** when every annotated gameplay-relevant region is
+checked off. Cosmetic/sound regions may be left explicitly deferred rather
+than swept. Regions in the "not eligible" list do **not** block completion —
+they block only themselves, and they re-enter the sweep when someone
+documents them.
 
 ## Phase 2 — Turn one candidate into a published code
 
@@ -176,6 +239,14 @@ Confirm the exact address and original byte against BOTH the annotated source
 listing and the actual ROM (`memory({op:'readCart'})` at the CPU address).
 Quote the source line in your notes. If they disagree, the disassembly is wrong
 there — stop and investigate.
+
+This step is also the backstop for the annotated-code-only rule. While you
+have the source line open, confirm the surrounding routine or table really is
+named and documented, and that the comment states the byte's role as fact
+rather than as a guess. If it turns out the region is auto-labelled, or the
+annotation hedges ("appears to be", "presumably", "unverified"), **stop and
+send the candidate back** — record it as an annotation task instead of
+publishing a code whose mechanism paragraph you would have to invent.
 
 ### Step 2 — Encode, then round-trip
 
