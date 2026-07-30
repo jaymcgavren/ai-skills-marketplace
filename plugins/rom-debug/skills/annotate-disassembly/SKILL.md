@@ -395,6 +395,17 @@ is the difference between the recipe working and not.
   `breakpoint(on='pc')` and see what the stack/registers say at entry,
   or `disasm(target='pointerTable')` on a suspected table (`reverseHandler`
   answers "which state index lands here?").
+- **A state-transition table's outputs are dispatch indices — decode it once
+  and it names handlers.** Where the dispatcher indexes on `state & $7F`, every
+  entry of a collision / damage / death transition table is a handler you can
+  name for free, and conversely every handler with no visible caller has its
+  index sitting somewhere in that table's *values*. Neither direction costs a
+  breakpoint. One "is this dead code?" question had both halves already recorded
+  in the same file — one banner had measured `state $83 -> transition[$03] =
+  $13`, another called the `$13` handler unreachable — because nobody asked
+  whether the value one had was the index the other needed. When you learn a
+  state value, look it up in the dispatch table; when a handler looks
+  unreachable, scan the transition table's values for its index.
 - **Mine the call sites of anything you just named.** A raw byte-scan of the
   ROM for the call instruction (`jsr $873C` = `20 3C 87`) beats the desynced
   source text, and the few bytes *preceding* each site are the argument
