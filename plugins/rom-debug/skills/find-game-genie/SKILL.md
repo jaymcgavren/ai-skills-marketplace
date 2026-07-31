@@ -3,11 +3,9 @@ description: >
   Mine a documented disassembly for interesting single-byte ROM patches and
   turn them into byte-verified, published Game Genie codes. Use when the user asks
   for Game Genie / cheat codes for a game that has an annotated disassembly,
-  ROM map, or RAM map available — especially when they want *unusual* codes
-  that demonstrate how the program works, not the classic infinite-lives set.
-  Runs a systematic candidate sweep first, then works codes one at a time.
-  Only mines regions whose purpose is already annotated — code of unknown
-  purpose is out of scope.
+  ROM map, or RAM map available. Runs a systematic candidate sweep first, then
+  works codes one at a time. Only mines regions whose purpose is already
+  annotated — code of unknown purpose is out of scope.
 allowed-tools: Task Read Write Edit Grep Glob Bash AskUserQuestion mcp__romdev__memory mcp__romdev__cheats mcp__romdev__state mcp__romdev__frame mcp__romdev__input mcp__romdev__playtest mcp__romdev__disasm mcp__romdev__loadMedia mcp__romdev__symbols mcp__romdev__catalog mcp__romdev__platform
 ---
 
@@ -130,30 +128,24 @@ the top.
 Grep the annotated source and maps for these patterns. The goal is codes that
 each demonstrate a *different documented subsystem* — breadth over quantity.
 
-1. **Secret / easter-egg gates** — button-chord checks (`and #$C0 / cmp
-   #$C0`-style). Change the `cmp` operand to `$00` to invert the secret: it
-   fires with *no* input, and the chord gets the normal path.
-2. **Debug leftovers** — features gated on a debug flag (`lda flag / beq
-   skip`). Flip the branch opcode (`beq $F0` ↔ `bne $D0`) so the debug
-   display/feature is always on for normal players.
-3. **Boot/init immediates** — `lda #imm / sta` in cold-boot or mode-init
-   code: starting area/level, timers, initial state. Includes "boot into
-   unused content" codes when the disassembly proved an area/level ID is a
-   null table row.
-4. **Gameplay data tables** — edit one entry in a documented parameter table
+1. **Gameplay data tables** — edit one entry in a documented parameter table
    (weapon speed/type rows, per-level tables). These make great codes because
    the mechanism is fully explainable.
-5. **Shared state machines** — a routine that writes a state constant into
+2. **Shared state machines** — a routine that writes a state constant into
    object slots (`lda #state / sta slots,x` sweeps). Substituting a different
    documented state redirects behavior in surprising ways (e.g. a
    kill-everything sweep that turns enemies into pickups). Expect and
    document glitches — uninitialized fields are part of the finding.
+3. **Secret / easter-egg gates** — button-chord checks (`and #$C0 / cmp
+   #$C0`-style). Change the `cmp` operand to `$00` to invert the secret: it
+   fires with *no* input, and the chord gets the normal path.
+4. **Debug leftovers** — features gated on a debug flag (`lda flag / beq
+   skip`). Flip the branch opcode (`beq $F0` ↔ `bne $D0`) so the debug
+   display/feature is always on for normal players.
+5. **Boot/init immediates** — `lda #imm / sta` in cold-boot or mode-init
+   code: starting area/level, timers, initial state.
 6. **Attract-mode / RNG parameters** — masks and offsets in demo
    randomizers (`and #mask / adc #base`).
-7. **Documented bugs** — publish the *fix* as a code. A Game Genie code that
-   repairs the game is the most unusual code of all.
-
-**Anti-goals:** infinite lives, invincibility, 99 ammo — skip unless asked.
 
 **Candidate quality rules:**
 - The byte must sit in **annotated code** (see the hard rule above). This is a
