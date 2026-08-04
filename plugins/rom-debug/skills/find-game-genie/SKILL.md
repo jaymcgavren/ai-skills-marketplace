@@ -146,6 +146,25 @@ each demonstrate a *different documented subsystem* — breadth over quantity.
    code: starting area/level, timers, initial state.
 6. **Attract-mode / RNG parameters** — masks and offsets in demo
    randomizers (`and #mask / adc #base`).
+7. **Dispatch table entries** — an event that runs a handler looked up from an
+   address table (`jsr TableJump` over `.addr` rows, or an indexed `jmp
+   (table,x)`). Repointing one entry at a *different handler from the same
+   table* changes what the event does, and costs a single byte whenever both
+   handlers share a 256-byte page — the entry's low byte sits at `table +
+   2*index`. Enumerate every table, then for each entry list the same-page
+   siblings; that list is the menu of one-byte options. Scriptable from the
+   linker's label file.
+8. **Store/load operand redirection** — an instruction writing a documented
+   variable can be pointed at a *different* documented variable in the same
+   addressing mode's reach; on 6502 a zero-page `sta` (`85 xx`) reaches all of
+   zero page in one byte. What makes this powerful is that the *value* being
+   stored is often already fixed by context, so the whole zero-page variable
+   map becomes the option set for a single event.
+
+Patterns 7 and 8 are a different lever from 1-6: they change a *destination*
+rather than a *value*. Both satisfy the annotated-code-only rule at both ends
+— the entry and the target are each documented — which usually makes a
+redirect easier to explain than an immediate tweak, not harder.
 
 **Candidate quality rules:**
 - The byte must sit in **annotated code** (see the hard rule above). This is a
@@ -158,6 +177,11 @@ each demonstrate a *different documented subsystem* — breadth over quantity.
   branch → `lda #imm` to neuter it).
 - The patched byte must be read at a well-understood moment. Beware bytes
   shared by multiple code paths (note every caller in the writeup).
+- When redirecting a dispatch entry, check the replacement satisfies the
+  *caller's* contract, not just its own. Sibling handlers in one table often
+  differ in the side effects the caller depends on — a substitute that
+  returns the right flag but skips the state the caller expects can soft-lock
+  the game.
 
 ### Record each candidate so a cheaper model can execute it
 
