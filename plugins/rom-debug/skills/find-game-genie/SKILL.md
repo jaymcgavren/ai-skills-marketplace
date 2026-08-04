@@ -160,6 +160,15 @@ each demonstrate a *different documented subsystem* — breadth over quantity.
    zero page in one byte. What makes this powerful is that the *value* being
    stored is often already fixed by context, so the whole zero-page variable
    map becomes the option set for a single event.
+9. **Repurposed controller buttons** — find the input handler and look for a
+   button whose action is *discretionary*: pause, a menu toggle, a button the
+   game reads but barely uses. Its handler is a per-frame, player-triggered
+   entry point, so redirecting what it does (usually via pattern 8) yields a
+   new *mechanic* the player fires at will rather than a constant that is
+   always different. The button-read site is easy to find — mask the button
+   bit against the input variable — and the handler is usually two or three
+   instructions, all of them candidates: the mask picks which button, the
+   value picks what is stored, the destination picks what is affected.
 
 Patterns 7 and 8 are a different lever from 1-6: they change a *destination*
 rather than a *value*. Both satisfy the annotated-code-only rule at both ends
@@ -177,6 +186,9 @@ redirect easier to explain than an immediate tweak, not harder.
   branch → `lda #imm` to neuter it).
 - The patched byte must be read at a well-understood moment. Beware bytes
   shared by multiple code paths (note every caller in the writeup).
+- Repurposing a button costs the player its original function. Say so in the
+  writeup, and prefer buttons whose loss is cheap — a game with no pause is
+  fine, a game you can no longer un-pause is not.
 - When redirecting a dispatch entry, check the replacement satisfies the
   *caller's* contract, not just its own. Sibling handlers in one table often
   differ in the side effects the caller depends on — a substitute that
