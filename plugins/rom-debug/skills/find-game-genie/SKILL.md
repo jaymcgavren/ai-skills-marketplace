@@ -146,14 +146,32 @@ each demonstrate a *different documented subsystem* — breadth over quantity.
    code: starting area/level, timers, initial state.
 6. **Attract-mode / RNG parameters** — masks and offsets in demo
    randomizers (`and #mask / adc #base`).
-7. **Dispatch table entries** — an event that runs a handler looked up from an
-   address table (`jsr TableJump` over `.addr` rows, or an indexed `jmp
-   (table,x)`). Repointing one entry at a *different handler from the same
-   table* changes what the event does, and costs a single byte whenever both
-   handlers share a 256-byte page — the entry's low byte sits at `table +
-   2*index`. Enumerate every table, then for each entry list the same-page
-   siblings; that list is the menu of one-byte options. Scriptable from the
-   linker's label file.
+7. **Redirected pointers** — anywhere the game names an address, that address
+   can be made to name something else. Four shapes, in rising order of how
+   much of the ROM they cover:
+   - *Dispatch table entries* — an event runs a handler looked up from an
+     address table (`jsr TableJump` over `.addr` rows, or an indexed `jmp
+     (table,x)`). Repointing one entry at a different handler *from the same
+     table* changes what the event does.
+   - *Data pointer tables* — the same shape read for data rather than jumped
+     through (per-level layout / info / graphics pointers). Identical lever,
+     and usually a bigger effect per byte: one entry can swap a whole level's
+     rooms or an entire tile set.
+   - *Call operands* — the address in any `jsr`/`jmp abs`, no table involved.
+     The largest candidate space in a ROM, so filter hard; see the call-site
+     rule below.
+   - *Table bases* — the operand of the `lda table,x` itself, which repoints
+     the whole table at once.
+
+   Which byte to patch: the low byte (`table + 2*index`) works when both
+   targets share a 256-byte page. The **high byte** (`+ 1`) works when they
+   share a low byte, which page-aligned data blocks routinely do — a table of
+   pointers all ending in `$00` is a free high-byte swap with no page
+   condition at all. **Split low/high tables** (a `.lobytes` run followed by a
+   `.hibytes` run) drop the condition entirely, since the halves are separate
+   arrays. Enumerate every table, then for each entry list the siblings
+   reachable by *each* byte; that is the menu of one-byte options, and it is
+   scriptable from the linker's label file.
 8. **Store/load operand redirection** — an instruction writing a documented
    variable can be pointed at a *different* documented variable in the same
    addressing mode's reach; on 6502 a zero-page `sta` (`85 xx`) reaches all of
@@ -194,6 +212,13 @@ redirect easier to explain than an immediate tweak, not harder.
   differ in the side effects the caller depends on — a substitute that
   returns the right flag but skips the state the caller expects can soft-lock
   the game.
+- When redirecting a *call*, the call site is what makes the candidate good,
+  not the callee. Page neighbours are accidents of the assembler's layout, so
+  almost every call has some — the filter is the site's timing: a call that
+  runs every frame, once per object slot, or exactly when the player does
+  something. Those sites also tend to satisfy the caller-contract rule for
+  free, because the registers are already loaded the way the substitute wants
+  them (a per-slot call with the slot index in X is the classic case).
 
 ### Record each candidate so a cheaper model can execute it
 
@@ -267,6 +292,15 @@ Confirm the exact address and original byte against BOTH the annotated source
 listing and the actual ROM (`memory({op:'readCart'})` at the CPU address).
 Quote the source line in your notes. If they disagree, the disassembly is wrong
 there — stop and investigate.
+
+Check whether the byte is in code that **runs from RAM**. Games copy blocks out
+of ROM into RAM (relocated common routines, overlays, bank-switch trampolines),
+and the disassembly labels those with their *run* addresses. A code aimed at a
+run address silently does nothing — the candidate looks perfectly good and the
+patch never lands, which is the worst failure mode in this pipeline because
+nothing here playtests. The linker map gives both addresses; convert with
+`load + (run − run_start)` and verify against the ROM at the load address. If
+the address is outside the cartridge window, that is the tell.
 
 This step is also the backstop for the annotated-code-only rule. While you
 have the source line open, confirm the surrounding routine or table really is
