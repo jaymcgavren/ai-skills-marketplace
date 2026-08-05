@@ -41,6 +41,43 @@ final set *broad* and *representative*, which is the whole point of these codes.
 - Know the mapper/banking layout before you start — you need it to read the
   original byte from the right bank when verifying (Step 1). It does not
   affect the code format: every code is 8-letter with a compare byte.
+- **A label file** mapping every source label — and ideally every source
+  *line* — to its CPU address. Build one first if the project has none; see
+  below.
+
+### Build a label file before you sweep
+
+Both phases run on addresses, and without a label file every single candidate
+costs a round trip to locate its byte (pattern-searching the ROM for a snippet
+of surrounding opcodes). That is the dominant cost of the whole pipeline, it
+scales with the number of candidates, and it makes the sweep in Phase 1 so
+expensive that you will be tempted to cut it short. With a label file, locating
+a byte is one `grep`.
+
+If the project's build emits one (ld65 `-Ln`, sdld `.map`, a `.mlb`), use it.
+If the toolchain is driven through the romdev MCP and no map reaches disk,
+**write a small assembler-lite** over the disassembly: walk the source, size
+each instruction from an opcode table, and record the running PC per label and
+per line.
+
+Make it **self-validating rather than merely plausible** — a silently wrong
+address is the same failure mode as a run-address candidate in Step 1, a code
+that looks fine and patches nothing. Two checks together are a whole-file
+proof, and both are nearly free once you have the ROM bytes:
+
+- **Verify each instruction against the ROM.** Assemble the line to its opcode
+  byte and compare it to the ROM at the computed address. Where an operand's
+  width is ambiguous (zero-page vs absolute), let the ROM byte pick the mode.
+- **Check the end lands exactly on the end of the image.** A mis-sized
+  instruction or a miscounted `.byte` row desyncs the PC and trips the opcode
+  check on the very next line, so a clean pass over the whole file means every
+  size was right.
+
+Report both results (`final pc`, mismatch count) when you build it. If either
+check fails, the drift is a real bug — fix it before mining, because every
+candidate downstream inherits it. Record the file's path and its regeneration
+command in the project's build notes so later sessions use it instead of
+rebuilding it or falling back to pattern search.
 
 ## Where to start — check the sweep state first
 
