@@ -66,18 +66,46 @@ that looks fine and patches nothing. Two checks together are a whole-file
 proof, and both are nearly free once you have the ROM bytes:
 
 - **Verify each instruction against the ROM.** Assemble the line to its opcode
-  byte and compare it to the ROM at the computed address. Where an operand's
-  width is ambiguous (zero-page vs absolute), let the ROM byte pick the mode.
+  field and compare it to the ROM at the computed address. Where the source is
+  ambiguous about operand width — the short/long forms most 8- and 16-bit CPUs
+  offer (6502 zero-page vs absolute, Z80 and 68000 short vs extended
+  addressing, 65816 operand sizes that depend on register state) — let the ROM
+  byte decide which form was actually assembled, rather than guessing.
 - **Check the end lands exactly on the end of the image.** A mis-sized
-  instruction or a miscounted `.byte` row desyncs the PC and trips the opcode
-  check on the very next line, so a clean pass over the whole file means every
-  size was right.
+  instruction or a miscounted data-directive row desyncs the PC and trips the
+  opcode check on the very next line, so a clean pass over the whole file means
+  every size was right.
+
+Both checks are CPU-agnostic in principle; only the opcode table and the
+addressing-mode list are per-architecture, and the disassembly you are mining
+already tells you which one you need.
 
 Report both results (`final pc`, mismatch count) when you build it. If either
 check fails, the drift is a real bug — fix it before mining, because every
-candidate downstream inherits it. Record the file's path and its regeneration
-command in the project's build notes so later sessions use it instead of
-rebuilding it or falling back to pattern search.
+candidate downstream inherits it. Have the generator **refuse to write** the
+file when either check fails, so a bad map can never be picked up later as if
+it were good. Record the file's path and its regeneration command in the
+project's build notes so later sessions use it instead of rebuilding it or
+falling back to pattern search.
+
+**Treat a label file as stale until proven current.** These projects annotate
+their disassembly continuously — the sibling `annotate-disassembly` skill exists
+to do exactly that — and every line added or removed shifts source-line numbers,
+so a label file from an earlier session can be quietly wrong. The self-check
+above does not save you here: a stale file is one you never re-ran. So:
+
+- **Fingerprint the source** (a hash of the disassembly) inside the label file,
+  and give the generator a `--check` mode that compares it and exits non-zero
+  when it differs. Verify at the start of every session before mining a single
+  candidate; regeneration is seconds, so just regenerate when in doubt.
+- **Prefer label names to line numbers** in the backlog and in anything else
+  that outlives the session. Label names survive annotation edits; line numbers
+  do not. This is the same rule Step 3 already imposes on published writeups —
+  apply it to the candidate records too.
+
+Note the two failure modes are different: the source drifting from the *ROM*
+trips the opcode check, while the label file drifting from the *source* trips
+only the fingerprint check. You want both.
 
 ## Where to start — check the sweep state first
 
