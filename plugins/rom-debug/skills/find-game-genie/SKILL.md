@@ -352,14 +352,33 @@ form that carries a compare value.
 Write `notes/game_genie_codes.md` (or the repo's convention) with one entry
 per code:
 
-- The letter code, the raw `ADDR:NEW:OLD` form, and which banks/regions.
-- A one-paragraph **mechanism** citing the routine/table names from the
-  disassembly — the point of these codes is that they're explainable, and with
-  no playtest in the pipeline the mechanism *is* the evidence.
-- Evidence: the source line the byte came from and the ROM read that confirmed
-  it (Step 1). State plainly that the effect is derived from the disassembly
-  and has not been observed in play — don't write it up as if it had been.
+- The letter code, the raw `ADDR:NEW:OLD` form, which banks/regions, and the
+  date/time of recording in `YYYY-MM-DD HH:MM:SS` format. E.g.:
+- A one-paragraph **mechanism** citing the routine/table names (never line
+  numbers) from the disassembly — the point of these codes is that they're
+  explainable, and with no playtest in the pipeline the mechanism *is* the
+  evidence.
+- Evidence: the routine name (never line numbers) for the code the byte came
+  from and the ROM read that confirmed it (Step 1). State plainly that the
+  effect is derived from the disassembly and has not been observed in play —
+  don't write it up as if it had been.
 - Caveats: shared code paths, likely glitches, interactions with other codes.
+
+Example:
+
+``` python
+## [Brief code description]
+
+**Code:** `AEYAGYZE`
+**Raw form:** `87F4:08:02` (address:new-byte:compare-byte)
+**Recorded:** 2025-11-27 18:32:57
+
+**Mechanism:** [mechanism description]
+
+**Evidence:** [evidence description]
+
+**Caveats:** [caveats description]
+```
 
 Do not modify the canonical disassembly source for any of this — nothing in
 this pipeline writes to the ROM or the sources, so no rebuild/byte-compare gate
