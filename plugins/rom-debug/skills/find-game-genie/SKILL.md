@@ -100,8 +100,7 @@ above does not save you here: a stale file is one you never re-ran. So:
   candidate; regeneration is seconds, so just regenerate when in doubt.
 - **Prefer label names to line numbers** in the backlog and in anything else
   that outlives the session. Label names survive annotation edits; line numbers
-  do not. This is the same rule Step 3 already imposes on published writeups —
-  apply it to the candidate records too.
+  do not.
 
 Note the two failure modes are different: the source drifting from the *ROM*
 trips the opcode check, while the label file drifting from the *source* trips
