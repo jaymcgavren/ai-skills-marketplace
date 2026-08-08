@@ -417,7 +417,7 @@ Write `notes/game_genie_codes.md` (or the repo's convention) with one entry
 per code:
 
 - The letter code, the raw `ADDR:NEW:OLD` form, which banks/regions, and the
-  date/time of recording in `YYYY-MM-DD HH:MM:SS` format. E.g.:
+  date/time of recording in `YYYY-MM-DD HH:MM:SS` format.
 - A one-paragraph **mechanism** citing the routine/table names (never line
   numbers) from the disassembly — the point of these codes is that they're
   explainable, and with no playtest in the pipeline the mechanism *is* the
