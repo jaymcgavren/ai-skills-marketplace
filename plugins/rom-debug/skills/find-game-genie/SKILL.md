@@ -39,8 +39,14 @@ final set *broad* and *representative*, which is the whole point of these codes.
 - The romdev MCP `memory` tool with the game loaded, so you can read the
   original bytes out of the actual ROM when verifying (Step 1).
 - Know the mapper/banking layout before you start — you need it to read the
-  original byte from the right bank when verifying (Step 1). It does not
-  affect the code format: every code is 8-letter with a compare byte.
+  original byte from the right bank when verifying (Step 1), and on platforms
+  whose code format carries no compare byte it is also what tells you whether
+  a code can land on the wrong bank (see Step 2).
+- Know the target platform's **cheat-code format**, and in particular whether
+  it has a compare byte at all — NES and Game Boy do, SNES and Genesis do
+  not. It decides the hard rule in Step 2 and what the writeup must carry in
+  Step 3. The per-platform table is in Step 2; settle this before you sweep,
+  because it is also what you write into the backlog header.
 - **A label file** mapping every source label — and ideally every source
   *line* — to its CPU address. Build one first if the project has none; see
   below.
@@ -298,10 +304,17 @@ that a lower-power model can run Phase 2 without re-deriving anything:
 
 Also carry the Phase-2 reminders into the backlog header so the executor has
 them in front of it: verify the byte against BOTH the source line and the live
-ROM, encode with a round-trip-checked script, then publish. Restate the code
-format as a hard rule — **8-letter codes with a compare byte, never 6-letter,
-regardless of which bank the address is in** — and note that the pipeline
-never edits the ROM on disk, so **do not modify the disassembly source.**
+ROM, encode with a round-trip-checked encoder, then publish. **Restate this
+game's platform and its exact code format as a hard rule**, spelling out the
+character count and whether a compare byte exists — e.g. "NES: 8-letter with
+compare byte, never 6-letter, regardless of which bank the address is in", or
+"SNES: 8-character `XXXX-XXXX`, 24-bit address + data byte, **no compare
+byte** — do not invent one". This is the detail a lower-power executor is most
+likely to fill in from the wrong platform's convention, having seen far more
+NES codes than any other kind. On a no-compare platform, add that the original
+byte must still be recorded in the writeup (Step 3). Note too that the
+pipeline never edits the ROM on disk, so **do not modify the disassembly
+source.**
 
 ### Keep a coverage log
 
@@ -376,12 +389,71 @@ publishing a code whose mechanism paragraph you would have to invent.
 
 ### Step 2 — Encode, then round-trip
 
-**Always emit the 8-letter form, with a compare byte. Never record a 6-letter
-code** — not even for an address in a fixed, always-mapped bank where a
-5-letter/6-letter code would technically resolve. The compare byte is what
-makes a code state which original byte it expects, so it stays correct if the
-address is ever reached with a different bank mapped in, and it is
-self-documenting when someone reads the code back later.
+**Settle which code format the platform uses before you encode anything.** The
+most consequential thing about it — whether a code can carry a *compare byte*,
+the original byte the patch expects to find at the address — is **not** the
+same across platforms, and it drives the rules below:
+
+| Platform | Device / format | Compare byte |
+|---|---|---|
+| NES | Game Genie, 6-letter (address+data) or **8-letter** (address+data+compare) | Optional |
+| Game Boy / GBC | Game Genie, 6-character `ABC-DEF` or **9-character** `ABC-DEF-GHI` | Optional |
+| SNES | Game Genie, 8-character `XXXX-XXXX` — 24-bit address + data byte | **None** |
+| Genesis | Game Genie, 8-character `ABCD-EFGH` — 24-bit address + 16-bit **word** | **None** |
+| Others (SMS/GG, …) | Action Replay and relatives — look the scheme up | Varies |
+
+Which of the two rules below applies is decided by that table, not by
+preference or by whichever code format you have seen most often.
+
+**If the platform has a compare byte, always emit the form that carries it.**
+Never record a 6-letter NES code or a 6-character Game Boy one — not even for
+an address in a fixed, always-mapped bank where the short form would
+technically resolve. The compare byte is what makes a code state which
+original byte it expects, so it stays correct if the address is ever reached
+with a different bank mapped in, and it is self-documenting when someone reads
+the code back later.
+
+**If the platform has no compare byte, do not manufacture one** — no extra
+characters, no second code standing in for it, no `ADDR:NEW:OLD` string passed
+off as a code. Instead, account for what its absence costs you:
+
+- *The code no longer records what it expected to find.* Carry the original
+  byte in the writeup instead — Step 3 keeps the raw `ADDR:NEW:OLD` form for
+  exactly this reason — and cite the ROM read that confirmed it. On these
+  platforms Step 1's read is the *only* check that the byte was ever right, so
+  a mis-verified candidate ships silently.
+- *The patch fires on address alone.* If the platform can bank different ROM
+  into that window, the code patches whatever happens to be mapped there —
+  check what else the game maps in at that address and note it. On flat or
+  statically mapped systems (Genesis's 68000 space, SNES LoROM/HiROM) this
+  mostly does not arise, which is why those formats can omit the field.
+- *Address aliases matter more.* Where the same ROM byte is visible at several
+  CPU addresses — SNES banks `$80-$FF` mirroring `$00-$7F` is the everyday
+  case — the code matches the address the CPU actually emits, so encode the
+  address the game really executes or reads from, not an equivalent mirror.
+- *The patch unit may not be a byte.* Genesis codes replace a 16-bit word, so
+  a "single-byte" candidate there is really a word patch: you need both
+  original bytes, and the one you are not changing must be carried through
+  unchanged.
+
+**Do not hand-derive the bit shuffle for any of these.**
+`cheats({op:'make'})` encodes for the loaded platform and returns a
+round-trip-`verified` code alongside the raw `ADDR:VAL`. Pass `compare` (the
+byte currently at the address, from Step 1) and it selects the device's
+ROM-patch form; omit it on platforms that have none. It also reports which
+device it encoded for, which is itself a check that you were reasoning about
+the right scheme — note that "the platform's native device" is not always a
+Game Genie (SNES also yields Pro Action Replay, GB/GBC GameShark for RAM,
+SMS/GG Action Replay), so read that field rather than assuming.
+
+If you write your own encoder anyway — worth it when you are producing many
+codes and want them scriptable — **write it as the inverse of a decoder** and
+have the script assert the round trip: encode(…) → decode → must reproduce the
+inputs exactly. Then cross-check at least one code against
+`cheats({op:'make'})` before trusting the rest of what it emits.
+
+The NES scheme is spelled out here because it is the one whose *optional*
+compare byte the rule above turns into a requirement.
 
 NES letter alphabet (letter → nibble): `A=0 P=1 Z=2 L=3 G=4 I=5 T=6 Y=7
 E=8 O=9 X=A U=B K=C S=D V=E N=F`. Canonical **decode** (letters n[0..7] as
@@ -399,17 +471,23 @@ compare = ((n[7] & 7) << 4) | ((n[6] & 8) << 4) | (n[6] & 7) | (n[5] & 8)
 
 Write the **encoder as the inverse of this decoder** in a scratchpad script,
 and make the script assert the round trip: encode(addr, data, compare) →
-decode → must reproduce the inputs exactly. Do not hand-derive bit shuffles.
+decode → must reproduce the inputs exactly.
 
-One compare-byte caveat worth knowing: a different bank holding the same byte
-at that offset will also match, so the patch can land somewhere unintended.
-Check the other banks for that byte at that offset and note it in the writeup.
+One caveat that applies even *with* a compare byte: a different bank holding
+the same byte at that offset will also match, so the patch can still land
+somewhere unintended. Check the other banks for that byte at that offset and
+note it in the writeup.
 
-Other platforms (SNES, Game Boy, Genesis) have Game Genie schemes with
-different alphabets and scrambles — look the scheme up per platform; the
-verify and publish steps are platform-independent. Where a platform's scheme
-offers a choice, apply the same principle as the NES rule above and pick the
-form that carries a compare value.
+Every other platform uses a different alphabet and a different scramble — SNES
+codes, for instance, draw on `DF4709156BC8A23E` indexed by nibble value, and
+pack a 24-bit address where the NES packs 15 bits and a compare byte. **Look
+the scheme up per platform and never adapt the NES bit layout to it**; the
+shapes are not related, and a code that decodes to a plausible-looking wrong
+address is indistinguishable from a good one until someone tries it. Where a
+platform's scheme offers a choice of forms, apply the same principle as the
+NES rule above and pick the one that carries a compare value; where it offers
+no such form, see the no-compare rules above. The verify and publish steps are
+platform-independent either way.
 
 ### Step 3 — Publish
 
@@ -417,7 +495,11 @@ Write `notes/game_genie_codes.md` (or the repo's convention) with one entry
 per code:
 
 - The letter code, the raw `ADDR:NEW:OLD` form, which banks/regions, and the
-  date/time of recording in `YYYY-MM-DD HH:MM:SS` format.
+  date/time of recording in `YYYY-MM-DD HH:MM:SS` format. Record `OLD` even
+  when — *especially* when — the platform's format has no compare byte: the
+  code no longer states which byte it expected to find, so the writeup is the
+  only place that fact survives, and it is what a later session needs to tell
+  a still-good code from one invalidated by a revision or a ROM edit.
 - A one-paragraph **mechanism** citing the routine/table names (never line
   numbers) from the disassembly — the point of these codes is that they're
   explainable, and with no playtest in the pipeline the mechanism *is* the
@@ -428,9 +510,9 @@ per code:
   don't write it up as if it had been.
 - Caveats: shared code paths, likely glitches, interactions with other codes.
 
-Example:
+Example, on a platform whose codes carry a compare byte (NES):
 
-``` python
+```
 ## [Brief code description]
 
 **Code:** `AEYAGYZE`
@@ -442,6 +524,27 @@ Example:
 **Evidence:** [evidence description]
 
 **Caveats:** [caveats description]
+```
+
+And on one whose codes do not (SNES) — the code is shorter, but the entry is
+not, because the original byte and the reasoning about aliases and banking now
+live only here:
+
+```
+## [Brief code description]
+
+**Code:** `XXXX-XXXX` (as emitted by the encoder, 8 characters, no compare)
+**Raw form:** `00A3C4:08:02` (address:new-byte:original-byte — the original
+byte is documentation, not part of the code; SNES Game Genie has no compare)
+**Recorded:** 2025-11-27 18:32:57
+
+**Mechanism:** [mechanism description]
+
+**Evidence:** [evidence description, including the ROM read that confirmed the
+original byte — on a no-compare platform this is the only check there is]
+
+**Caveats:** [caveats description, including any address mirrors that would
+*not* be patched by this code]
 ```
 
 Do not modify the canonical disassembly source for any of this — nothing in
