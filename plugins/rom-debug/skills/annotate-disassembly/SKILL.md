@@ -956,6 +956,40 @@ instruction column stays scannable.
   condition — one "suppresses spawning while the boss is locked" note was
   exactly backwards (the gate fired when the boss-locked bit was *clear*);
   reading the `beq` again while writing the comment is what caught it.
+#### Constants, not magic numbers
+
+- **Every literal you have explained is a candidate for an equate.**
+  `cmp #ENEMY_STATE_DYING` beats `cmp #$83`; `ldx #NUM_ENEMY_SLOTS` beats
+  `ldx #$08`. An equate assembles to identical bytes, so this sits inside the
+  byte-exact rule beside labels and comments — with the same caveat that the
+  *edit mechanism* can still break bytes, so `cmp` afterwards like anything
+  else.
+- **It is the only annotation the assembler checks.** A comment saying "the
+  table has $11 entries" rots silently; `ENEMY_TBL_LEN = 17` used by both the
+  table and the guard turns the length check from something each session
+  re-derives into an expression the build can assert. Where the guard and the
+  table genuinely disagree, that assertion is how the disagreement stops being
+  rediscovered.
+- **Name the constants your findings produced, not just the obvious ones.**
+  The "83" that turned out to be the type count belongs in the source as
+  `NUM_OBJECT_TYPES`, shared by all four parallel tables that are indexed by
+  it — which states the relationship between those tables in a form that
+  cannot drift out of sync with them.
+
+#### Marking the game's own bugs
+
+Original-game bugs are among the most-wanted outputs of a disassembly and the
+easiest to lose. Tag each one with a fixed, greppable marker in the banner
+(`BUG:`, or `BUG_<short_name>` when you want to cross-reference it), and say
+what goes wrong, on which inputs, and whether you reproduced it live or only
+read it. Marking matters mechanically here and not just editorially: an
+unmarked bug is precisely what a later session tidies up, and the tidy-up
+breaks the byte-exact rebuild. The table-overrun case above — a guard
+admitting two indices past the end of its table, returning the next routine's
+opcodes as a "bonus" ten times the intended maximum — is the shape to write
+down, along with a plain statement of whether those indices are reachable in
+play.
+
 - Add every new address to `RAM_MAP.md` with its meaning and how it was
   verified.
 - **Speculation goes in `TODO.md`, never in the annotation — and write it as a
