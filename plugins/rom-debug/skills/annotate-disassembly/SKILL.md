@@ -14,7 +14,15 @@ Static tools (`xrefs`, `cfg`, `decompile`) then fill in the surrounding
 structure.
 
 Prerequisites: a project with canonical `src/`, a rebuild recipe, `TODO.md`,
-and `RAM_MAP.md`. Load the ROM (`loadMedia`) at session start.
+`RAM_MAP.md`, and a `docs/` directory. Load the ROM (`loadMedia`) at session
+start.
+
+The project keeps four artifacts and they divide the work cleanly: **`src/`**
+holds the claims and their evidence grades, **`RAM_MAP.md`** is the address
+lookup table, **`docs/`** holds the reasoning behind any finding too long to
+sit in a banner, and **`TODO.md`** holds everything not yet established. A
+finding that has no home in that scheme is usually speculation that belongs in
+`TODO.md`.
 
 (Tool names use the `mcp__romdev__` prefix, which assumes the server was
 registered as `romdev`; match the prefix to your registered name.)
@@ -939,6 +947,16 @@ named from the banner in one line. This matters more here than in an ordinary
 project, because this method generates long findings, and a banner a reader
 must scroll past to reach the code stops being read at all.
 
+**Split the grade from the narrative — the grade never leaves the source.**
+The `Evidence:` line stays in the banner, in one line, because it is what makes
+an interrupted session recoverable: a later session that inherits a dirty tree
+reads "VERIFIED LIVE: write-bp on $04, 8x/frame from mid2.state" and knows the
+proof already happened (see step 5). What moves to `docs/` is the *account* —
+how the decode was derived, which hypotheses were killed and how, the census
+that came back complete and over what window. The banner names the doc; the doc
+cites the banner's address. Moving the grade out with the narrative would break
+the recovery path that the rest of this skill depends on.
+
 **Per-line comments say why, not what.** `lda $2E,x ; per-enemy score value`
 earns its column; `lda $2E,x ; load A` costs a column and teaches nothing.
 Put block comments *above* the code they describe rather than below it, so the
@@ -1002,6 +1020,11 @@ play.
   and state the convention once at the top, including whether the size column
   is hex. A size column that quietly switches to decimal halfway down is a
   real failure, and an easy one.
+- **The evidence column is a tag, not an account** — `write-bp`,
+  `census 45f complete`, `accessScan`, `inferred` — naming the instrument that
+  established the row so a reader knows which failure modes apply to it. The
+  account itself goes in `docs/`, which is what keeps this rule and the
+  one-line rule below from fighting each other.
 - **One line per row.** The row states the purpose; mechanism goes in the
   linked doc, exactly as with the banner. A map whose rows run to paragraphs
   stops being scannable, which is the only thing it was for.
@@ -1041,6 +1064,13 @@ play.
 - Tick the `TODO.md` item (add follow-up items you uncovered — unexplained
   branches, suspicious tables). Note surprising dead-ends too: knowing that
   "$037B is a timer, not lives" saves the next session from re-deriving it.
+- **Commit any `docs/` writeup in the SAME commit as the source edit it
+  explains.** A doc landing in a later commit than the annotation can describe
+  code that does not exist yet, or survive a revert of the code it documents;
+  one commit per increment keeps the account and the claim inseparable. The
+  same goes the other way — if you moved a mechanism out of a banner into
+  `docs/`, the banner's one-line reference to it belongs in that commit too,
+  or the source is left pointing at nothing.
 - **Stopping mid-increment (context running out, user interrupt):** if the
   working tree holds an edit that doesn't yet rebuild, do NOT commit
   anything — instead write a prominent IN-FLIGHT section at the top of
