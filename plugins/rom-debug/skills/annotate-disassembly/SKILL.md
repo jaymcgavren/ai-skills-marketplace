@@ -14,7 +14,15 @@ Static tools (`xrefs`, `cfg`, `decompile`) then fill in the surrounding
 structure.
 
 Prerequisites: a project with canonical `src/`, a rebuild recipe, `TODO.md`,
-and `RAM_MAP.md`. Load the ROM (`loadMedia`) at session start.
+`RAM_MAP.md`, and a `docs/` directory. Load the ROM (`loadMedia`) at session
+start.
+
+The project keeps four artifacts and they divide the work cleanly: **`src/`**
+holds the claims and their evidence grades, **`RAM_MAP.md`** is the address
+lookup table, **`docs/`** holds the reasoning behind any finding too long to
+sit in a banner, and **`TODO.md`** holds everything not yet established. A
+finding that has no home in that scheme is usually speculation that belongs in
+`TODO.md`.
 
 (Tool names use the `mcp__romdev__` prefix, which assumes the server was
 registered as `romdev`; match the prefix to your registered name.)
@@ -841,9 +849,120 @@ the poke failed.
 
 ### 4. Write the annotation
 
+Everything above is about *establishing* a fact. Writing it down is a separate
+craft, and largely a solved one — long-running disassembly projects have
+converged on a small set of conventions, and matching them means anyone who
+has read one disassembly can read yours, including the next session of this
+one. Where the project already has a convention it wins over every rule below;
+consistency is worth more than any particular choice.
+
+#### Naming
+
 - Rename auto-labels (`L8F78` → `PlayerDeathHandler`) at the definition and
   every reference. Name routines for what they *do*, data for what it *is*.
-- Comment the routine header with what it does **and the evidence grade**:
+- **Routines and ROM data are PascalCase** (`DrawScoreDigits`,
+  `EnemySpeedTbl`). Abbreviate consistently — `Tbl`, `Ptr`, `Idx`, `Cnt` —
+  so that a grep for one spelling finds all of them.
+- **RAM labels carry a prefix for the memory they live in.** The common form
+  is a lowercase region initial plus PascalCase (`wPlayerHP`,
+  `hScrollShadow`, `vTilesetTiles`, `sSaveChecksum`), adapted to the regions
+  your platform actually has (zero page, work RAM, VRAM, save RAM). This is
+  not decoration: the prefix states which access rules apply — zero-page
+  addressing, VRAM writable only during blanking, battery-backed bytes that
+  survive a power cycle — which is exactly the context a reader needs to
+  judge whether a store is legal where it sits.
+- **Constants are ALL_CAPS_SNAKE**, and hardware registers keep the
+  platform's documented names (`PPUMASK`, `rLCDC`, `VDP_CTRL`). Never invent
+  a name for a register that already has one — the reader knows the official
+  name and greps for it.
+- **Local labels inside a routine** take the assembler's local form
+  (`.loop`, `.done`, `.notDead`), keeping the global namespace for things
+  worth finding from outside.
+- **An honest placeholder beats a guessed name.** A routine you have
+  delimited but not explained stays `Sub_8F78` — address-derived, greppable,
+  visibly unverified. Naming it from a hunch launders the hunch, the same
+  failure as writing speculation into a comment but harder to catch later,
+  because a name reads as settled no matter how it was arrived at.
+- **Two suffix conventions pay for themselves**: a secondary entry point that
+  falls through into the main routine is named after it (`SpawnEnemyNoInit`
+  ahead of `SpawnEnemy`), and a cross-bank trampoline is marked as one
+  (`_far`), so a reader knows the call is not a plain `jsr` to the address
+  it names.
+- **Lifecycle prefixes make a bank's shape visible without reading it**:
+  `Init…` runs once, `Update…`/`Main…` runs every frame, `Check…` returns a
+  flag and touches nothing else. Use one only when you can pick it
+  truthfully — and when you can't, that uncertainty is itself a TODO item.
+#### The routine header block
+
+Give every routine you name a banner in fixed fields. Fixed fields beat prose
+because they make an omission visible: a blank `Arguments:` is a question,
+where prose simply fails to mention the inputs and reads as complete.
+
+    ; ==============================================================
+    ;       Name: UpdateEnemyPhysics
+    ;       Type: Subroutine
+    ;   Category: Enemies
+    ;    Summary: Advance one enemy slot's position, apply gravity
+    ;  Arguments: X     = enemy slot index (0-7)
+    ;             $2E,x = per-enemy score value (read, never written
+    ;                     here; set by the spawner at $873C)
+    ;             C     = clear on entry from the pause path
+    ;    Returns: $04,x updated; C set if the enemy left the screen
+    ;   Clobbers: A, Y
+    ;  Entry pts: UpdateEnemyNoGrav ($B2A4) skips the gravity step
+    ;   Evidence: VERIFIED LIVE - write-breakpoint on $04 fired here
+    ;             8x/frame from mid2.state; OAM prediction matched
+    ;             16/16 bytes
+    ; ==============================================================
+
+The fields are not bureaucracy. Each is the *output* of a rule earlier in this
+skill, and filling one in is what forces you to notice you never established
+it:
+
+- **Arguments** is what "a byte a routine only READS is a PARAMETER"
+  produces. Callers in 8-bit code communicate through globals and registers,
+  so the argument list is scattered across zero page and has to be assembled
+  deliberately — nothing else in the file will record it.
+- **Arguments includes the flags.** A routine whose first `sbc` has no `sec`
+  takes the carry as an argument, and its meaning is then a property of each
+  call site. If you measured the carry at one caller, name that caller here
+  rather than generalizing it to the routine.
+- **Entry points** is where the RTS-trick tables, fall-through arms and
+  `reverseHandler` lookups land. A handler reached only by dispatch index has
+  no `jsr` naming it; record the index and the routine stops looking
+  unreachable to the next reader.
+- **Category** costs nothing and makes a 7000-line bank navigable by grep.
+- **Evidence** is the grade, below.
+
+**Fix the multi-byte notation once, in the project README, and never deviate.**
+Write a 16-bit value most-significant-first in parentheses regardless of how it
+is stored — `($33 $32)` for a little-endian word whose low byte sits at `$32` —
+and say so where a reader will find it. "The pointer at $32" is ambiguous in
+exactly the way that produces an off-by-one-byte misreading months later.
+
+**Keep the banner short; put the mechanism in a linked doc.** The header
+identifies the routine. A paragraph of decode reasoning, a table grammar, or
+the account of which three hypotheses were killed belongs in `docs/<topic>.md`,
+named from the banner in one line. This matters more here than in an ordinary
+project, because this method generates long findings, and a banner a reader
+must scroll past to reach the code stops being read at all.
+
+**Split the grade from the narrative — the grade never leaves the source.**
+The `Evidence:` line stays in the banner, in one line, because it is what makes
+an interrupted session recoverable: a later session that inherits a dirty tree
+reads "VERIFIED LIVE: write-bp on $04, 8x/frame from mid2.state" and knows the
+proof already happened (see step 5). What moves to `docs/` is the *account* —
+how the decode was derived, which hypotheses were killed and how, the census
+that came back complete and over what window. The banner names the doc; the doc
+cites the banner's address. Moving the grade out with the narrative would break
+the recovery path that the rest of this skill depends on.
+
+**Per-line comments say why, not what.** `lda $2E,x ; per-enemy score value`
+earns its column; `lda $2E,x ; load A` costs a column and teaches nothing.
+Put block comments *above* the code they describe rather than below it, so the
+instruction column stays scannable.
+
+- **Grade the evidence, in the banner itself**:
   "verified: write-breakpoint on $32 fired here on death" is durable;
   "inferred from callers, unverified" tells the next session what still
   needs proof. Never state a guess as fact — a wrong comment poisons every
@@ -855,8 +974,75 @@ the poke failed.
   condition — one "suppresses spawning while the boss is locked" note was
   exactly backwards (the gate fired when the boss-locked bit was *clear*);
   reading the `beq` again while writing the comment is what caught it.
-- Add every new address to `RAM_MAP.md` with its meaning and how it was
-  verified.
+#### Constants, not magic numbers
+
+- **Every literal you have explained is a candidate for an equate.**
+  `cmp #ENEMY_STATE_DYING` beats `cmp #$83`; `ldx #NUM_ENEMY_SLOTS` beats
+  `ldx #$08`. An equate assembles to identical bytes, so this sits inside the
+  byte-exact rule beside labels and comments — with the same caveat that the
+  *edit mechanism* can still break bytes, so `cmp` afterwards like anything
+  else.
+- **It is the only annotation the assembler checks.** A comment saying "the
+  table has $11 entries" rots silently; `ENEMY_TBL_LEN = 17` used by both the
+  table and the guard turns the length check from something each session
+  re-derives into an expression the build can assert. Where the guard and the
+  table genuinely disagree, that assertion is how the disagreement stops being
+  rediscovered.
+- **Name the constants your findings produced, not just the obvious ones.**
+  The "83" that turned out to be the type count belongs in the source as
+  `NUM_OBJECT_TYPES`, shared by all four parallel tables that are indexed by
+  it — which states the relationship between those tables in a form that
+  cannot drift out of sync with them.
+
+#### Marking the game's own bugs
+
+Original-game bugs are among the most-wanted outputs of a disassembly and the
+easiest to lose. Tag each one with a fixed, greppable marker in the banner
+(`BUG:`, or `BUG_<short_name>` when you want to cross-reference it), and say
+what goes wrong, on which inputs, and whether you reproduced it live or only
+read it. Marking matters mechanically here and not just editorially: an
+unmarked bug is precisely what a later session tidies up, and the tidy-up
+breaks the byte-exact rebuild. The table-overrun case above — a guard
+admitting two indices past the end of its table, returning the next routine's
+opcodes as a "bonus" ten times the intended maximum — is the shape to write
+down, along with a plain statement of whether those indices are reachable in
+play.
+
+#### `RAM_MAP.md` and offset conventions
+
+- Add every new address with its meaning and how it was verified.
+- **Sort by address, ascending, always.** The map is a lookup table, not a
+  narrative: a reader arrives holding an address and needs its row. If the
+  layout is scattered enough that a by-subsystem view would help — the
+  player's state spread over four regions — add that as a *second* listing
+  rather than reordering the first.
+- **Columns: address, size, name, description, evidence.** Hex throughout,
+  and state the convention once at the top, including whether the size column
+  is hex. A size column that quietly switches to decimal halfway down is a
+  real failure, and an easy one.
+- **The evidence column is a tag, not an account** — `write-bp`,
+  `census 45f complete`, `accessScan`, `inferred` — naming the instrument that
+  established the row so a reader knows which failure modes apply to it. The
+  account itself goes in `docs/`, which is what keeps this rule and the
+  one-line rule below from fighting each other.
+- **One line per row.** The row states the purpose; mechanism goes in the
+  linked doc, exactly as with the banner. A map whose rows run to paragraphs
+  stops being scannable, which is the only thing it was for.
+- **Say whether ROM offsets include the external header, every time.** iNES
+  and copier headers shift every file offset (by `$10`, `$200`, …), so a map
+  that does not declare its convention is usable only by its author, and one
+  that mixes both conventions is usable by nobody. Put it in a line at the
+  top — "offsets are for a ROM with no iNES header; add `$10` for the
+  headered file" — and hold to it. This is not a formality here: the tools
+  take both forms, and they are not interchangeable. `romPatch` and
+  `disasm(target='script', fileOffset=…)` work in file offsets;
+  breakpoints, watches and `disasm(target='script', address=…)` work in CPU
+  addresses. A row that does not say which it holds will eventually be handed
+  to the wrong one.
+- **On a banked platform a CPU address alone is not an address.** `$8F78`
+  names different code in every bank, so record the bank alongside it — the
+  same reason `disasm(target='decompile')` reads the wrong bank's filler
+  without one.
 - **Speculation goes in `TODO.md`, never in the annotation — and write it as a
   question someone can attack.** Increments end with loose ends: a flag whose
   setter you didn't find, a variant you couldn't produce. The pressure is to
@@ -878,6 +1064,13 @@ the poke failed.
 - Tick the `TODO.md` item (add follow-up items you uncovered — unexplained
   branches, suspicious tables). Note surprising dead-ends too: knowing that
   "$037B is a timer, not lives" saves the next session from re-deriving it.
+- **Commit any `docs/` writeup in the SAME commit as the source edit it
+  explains.** A doc landing in a later commit than the annotation can describe
+  code that does not exist yet, or survive a revert of the code it documents;
+  one commit per increment keeps the account and the claim inseparable. The
+  same goes the other way — if you moved a mechanism out of a banner into
+  `docs/`, the banner's one-line reference to it belongs in that commit too,
+  or the source is left pointing at nothing.
 - **Stopping mid-increment (context running out, user interrupt):** if the
   working tree holds an edit that doesn't yet rebuild, do NOT commit
   anything — instead write a prominent IN-FLIGHT section at the top of
@@ -907,6 +1100,23 @@ Auto-disassembly sometimes decodes a region under the wrong assumptions
 swallows the next byte, which then decodes as a stray `brk`/`rti`). When
 rewriting such a region as real instructions:
 
+- **Harvest execution coverage before you argue about the bytes.** The
+  strongest evidence a region is code is that you watched it execute, and the
+  strongest evidence for data is that it is read but never run — both are
+  measurements, where every static heuristic below is an inference.
+  `watch(on='pc', start, end)` returns the distinct PCs executed in a window,
+  so a handful of long drives spanning every mode you can reach (cheats on,
+  one input held — the same one-call drives used elsewhere in this skill)
+  classify large stretches for free. Bank the traces: coverage accumulates
+  across sessions the way save states do, and a later run only has to cover
+  the modes earlier ones missed.
+  Two limits keep it honest. Coverage is a **positive instrument only** —
+  executed means code, but never-executed means only that your drives did not
+  get there, and error handlers, unused areas and peripheral-gated paths are
+  code that no amount of driving will light up. And a region is not obliged to
+  be one or the other: overlapping code/data is common in tight engines, and a
+  byte can be both a live instruction's operand and a table entry, which is
+  the operand-alias idiom below.
 - **Before repairing, INVENTORY — and sanity-check that your metric measures
   defects rather than correctness.** Scanning the whole disassembly once to
   size the problem beats stumbling into regions one at a time. But pick the
