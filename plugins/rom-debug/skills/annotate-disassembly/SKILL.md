@@ -841,8 +841,49 @@ the poke failed.
 
 ### 4. Write the annotation
 
+Everything above is about *establishing* a fact. Writing it down is a separate
+craft, and largely a solved one — long-running disassembly projects have
+converged on a small set of conventions, and matching them means anyone who
+has read one disassembly can read yours, including the next session of this
+one. Where the project already has a convention it wins over every rule below;
+consistency is worth more than any particular choice.
+
+#### Naming
+
 - Rename auto-labels (`L8F78` → `PlayerDeathHandler`) at the definition and
   every reference. Name routines for what they *do*, data for what it *is*.
+- **Routines and ROM data are PascalCase** (`DrawScoreDigits`,
+  `EnemySpeedTbl`). Abbreviate consistently — `Tbl`, `Ptr`, `Idx`, `Cnt` —
+  so that a grep for one spelling finds all of them.
+- **RAM labels carry a prefix for the memory they live in.** The common form
+  is a lowercase region initial plus PascalCase (`wPlayerHP`,
+  `hScrollShadow`, `vTilesetTiles`, `sSaveChecksum`), adapted to the regions
+  your platform actually has (zero page, work RAM, VRAM, save RAM). This is
+  not decoration: the prefix states which access rules apply — zero-page
+  addressing, VRAM writable only during blanking, battery-backed bytes that
+  survive a power cycle — which is exactly the context a reader needs to
+  judge whether a store is legal where it sits.
+- **Constants are ALL_CAPS_SNAKE**, and hardware registers keep the
+  platform's documented names (`PPUMASK`, `rLCDC`, `VDP_CTRL`). Never invent
+  a name for a register that already has one — the reader knows the official
+  name and greps for it.
+- **Local labels inside a routine** take the assembler's local form
+  (`.loop`, `.done`, `.notDead`), keeping the global namespace for things
+  worth finding from outside.
+- **An honest placeholder beats a guessed name.** A routine you have
+  delimited but not explained stays `Sub_8F78` — address-derived, greppable,
+  visibly unverified. Naming it from a hunch launders the hunch, the same
+  failure as writing speculation into a comment but harder to catch later,
+  because a name reads as settled no matter how it was arrived at.
+- **Two suffix conventions pay for themselves**: a secondary entry point that
+  falls through into the main routine is named after it (`SpawnEnemyNoInit`
+  ahead of `SpawnEnemy`), and a cross-bank trampoline is marked as one
+  (`_far`), so a reader knows the call is not a plain `jsr` to the address
+  it names.
+- **Lifecycle prefixes make a bank's shape visible without reading it**:
+  `Init…` runs once, `Update…`/`Main…` runs every frame, `Check…` returns a
+  flag and touches nothing else. Use one only when you can pick it
+  truthfully — and when you can't, that uncertainty is itself a TODO item.
 - Comment the routine header with what it does **and the evidence grade**:
   "verified: write-breakpoint on $32 fired here on death" is durable;
   "inferred from callers, unverified" tells the next session what still
