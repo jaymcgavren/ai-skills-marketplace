@@ -1070,6 +1070,23 @@ Auto-disassembly sometimes decodes a region under the wrong assumptions
 swallows the next byte, which then decodes as a stray `brk`/`rti`). When
 rewriting such a region as real instructions:
 
+- **Harvest execution coverage before you argue about the bytes.** The
+  strongest evidence a region is code is that you watched it execute, and the
+  strongest evidence for data is that it is read but never run — both are
+  measurements, where every static heuristic below is an inference.
+  `watch(on='pc', start, end)` returns the distinct PCs executed in a window,
+  so a handful of long drives spanning every mode you can reach (cheats on,
+  one input held — the same one-call drives used elsewhere in this skill)
+  classify large stretches for free. Bank the traces: coverage accumulates
+  across sessions the way save states do, and a later run only has to cover
+  the modes earlier ones missed.
+  Two limits keep it honest. Coverage is a **positive instrument only** —
+  executed means code, but never-executed means only that your drives did not
+  get there, and error handlers, unused areas and peripheral-gated paths are
+  code that no amount of driving will light up. And a region is not obliged to
+  be one or the other: overlapping code/data is common in tight engines, and a
+  byte can be both a live instruction's operand and a table entry, which is
+  the operand-alias idiom below.
 - **Before repairing, INVENTORY — and sanity-check that your metric measures
   defects rather than correctness.** Scanning the whole disassembly once to
   size the problem beats stumbling into regions one at a time. But pick the
