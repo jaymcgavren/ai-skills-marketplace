@@ -884,7 +884,67 @@ consistency is worth more than any particular choice.
   `Init…` runs once, `Update…`/`Main…` runs every frame, `Check…` returns a
   flag and touches nothing else. Use one only when you can pick it
   truthfully — and when you can't, that uncertainty is itself a TODO item.
-- Comment the routine header with what it does **and the evidence grade**:
+#### The routine header block
+
+Give every routine you name a banner in fixed fields. Fixed fields beat prose
+because they make an omission visible: a blank `Arguments:` is a question,
+where prose simply fails to mention the inputs and reads as complete.
+
+    ; ==============================================================
+    ;       Name: UpdateEnemyPhysics
+    ;       Type: Subroutine
+    ;   Category: Enemies
+    ;    Summary: Advance one enemy slot's position, apply gravity
+    ;  Arguments: X     = enemy slot index (0-7)
+    ;             $2E,x = per-enemy score value (read, never written
+    ;                     here; set by the spawner at $873C)
+    ;             C     = clear on entry from the pause path
+    ;    Returns: $04,x updated; C set if the enemy left the screen
+    ;   Clobbers: A, Y
+    ;  Entry pts: UpdateEnemyNoGrav ($B2A4) skips the gravity step
+    ;   Evidence: VERIFIED LIVE - write-breakpoint on $04 fired here
+    ;             8x/frame from mid2.state; OAM prediction matched
+    ;             16/16 bytes
+    ; ==============================================================
+
+The fields are not bureaucracy. Each is the *output* of a rule earlier in this
+skill, and filling one in is what forces you to notice you never established
+it:
+
+- **Arguments** is what "a byte a routine only READS is a PARAMETER"
+  produces. Callers in 8-bit code communicate through globals and registers,
+  so the argument list is scattered across zero page and has to be assembled
+  deliberately — nothing else in the file will record it.
+- **Arguments includes the flags.** A routine whose first `sbc` has no `sec`
+  takes the carry as an argument, and its meaning is then a property of each
+  call site. If you measured the carry at one caller, name that caller here
+  rather than generalizing it to the routine.
+- **Entry points** is where the RTS-trick tables, fall-through arms and
+  `reverseHandler` lookups land. A handler reached only by dispatch index has
+  no `jsr` naming it; record the index and the routine stops looking
+  unreachable to the next reader.
+- **Category** costs nothing and makes a 7000-line bank navigable by grep.
+- **Evidence** is the grade, below.
+
+**Fix the multi-byte notation once, in the project README, and never deviate.**
+Write a 16-bit value most-significant-first in parentheses regardless of how it
+is stored — `($33 $32)` for a little-endian word whose low byte sits at `$32` —
+and say so where a reader will find it. "The pointer at $32" is ambiguous in
+exactly the way that produces an off-by-one-byte misreading months later.
+
+**Keep the banner short; put the mechanism in a linked doc.** The header
+identifies the routine. A paragraph of decode reasoning, a table grammar, or
+the account of which three hypotheses were killed belongs in `docs/<topic>.md`,
+named from the banner in one line. This matters more here than in an ordinary
+project, because this method generates long findings, and a banner a reader
+must scroll past to reach the code stops being read at all.
+
+**Per-line comments say why, not what.** `lda $2E,x ; per-enemy score value`
+earns its column; `lda $2E,x ; load A` costs a column and teaches nothing.
+Put block comments *above* the code they describe rather than below it, so the
+instruction column stays scannable.
+
+- **Grade the evidence, in the banner itself**:
   "verified: write-breakpoint on $32 fired here on death" is durable;
   "inferred from callers, unverified" tells the next session what still
   needs proof. Never state a guess as fact — a wrong comment poisons every
