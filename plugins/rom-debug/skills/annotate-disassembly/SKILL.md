@@ -990,8 +990,36 @@ opcodes as a "bonus" ten times the intended maximum — is the shape to write
 down, along with a plain statement of whether those indices are reachable in
 play.
 
-- Add every new address to `RAM_MAP.md` with its meaning and how it was
-  verified.
+#### `RAM_MAP.md` and offset conventions
+
+- Add every new address with its meaning and how it was verified.
+- **Sort by address, ascending, always.** The map is a lookup table, not a
+  narrative: a reader arrives holding an address and needs its row. If the
+  layout is scattered enough that a by-subsystem view would help — the
+  player's state spread over four regions — add that as a *second* listing
+  rather than reordering the first.
+- **Columns: address, size, name, description, evidence.** Hex throughout,
+  and state the convention once at the top, including whether the size column
+  is hex. A size column that quietly switches to decimal halfway down is a
+  real failure, and an easy one.
+- **One line per row.** The row states the purpose; mechanism goes in the
+  linked doc, exactly as with the banner. A map whose rows run to paragraphs
+  stops being scannable, which is the only thing it was for.
+- **Say whether ROM offsets include the external header, every time.** iNES
+  and copier headers shift every file offset (by `$10`, `$200`, …), so a map
+  that does not declare its convention is usable only by its author, and one
+  that mixes both conventions is usable by nobody. Put it in a line at the
+  top — "offsets are for a ROM with no iNES header; add `$10` for the
+  headered file" — and hold to it. This is not a formality here: the tools
+  take both forms, and they are not interchangeable. `romPatch` and
+  `disasm(target='script', fileOffset=…)` work in file offsets;
+  breakpoints, watches and `disasm(target='script', address=…)` work in CPU
+  addresses. A row that does not say which it holds will eventually be handed
+  to the wrong one.
+- **On a banked platform a CPU address alone is not an address.** `$8F78`
+  names different code in every bank, so record the bank alongside it — the
+  same reason `disasm(target='decompile')` reads the wrong bank's filler
+  without one.
 - **Speculation goes in `TODO.md`, never in the annotation — and write it as a
   question someone can attack.** Increments end with loose ends: a flag whose
   setter you didn't find, a variant you couldn't produce. The pressure is to
